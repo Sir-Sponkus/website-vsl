@@ -26,7 +26,7 @@ cd website-vsl
 npm install
 ```
 
-### 3. Running the website
+### 3. Run the website
 ```bash
 npm run dev
 ```
