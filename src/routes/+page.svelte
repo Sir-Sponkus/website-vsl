@@ -7,6 +7,7 @@ HandLandmarker,
 FilesetResolver,
 DrawingUtils
 } from '@mediapipe/tasks-vision';
+import "7.css/dist/7.css";
 
 const TARGET_FRAMES = 60;
 const POSE_KEEP = 25;
@@ -14,10 +15,17 @@ const HAND_JOINTS = 21;
 const NUM_JOINTS = 67; // 25 Pose + 21 Left Hand + 21 Right Hand
 const RAW_DIMS = 3;     // x, y, z
 
+interface PredictionItem {
+  label: string;
+  confidence: number;
+  percentage: string;
+}
+
 const appState = $state({
 input: 'camera', // 'camera' or 'video'
 modelName: 'No model loaded',
-prediction: '—',
+prediction: '—', // topPredictions[0]
+topPredictions: [] as PredictionItem[], 
 isLoading: false,
 videoFile: 'No video selected'
 });
@@ -37,9 +45,20 @@ let drawingUtils: DrawingUtils | null = null;
 let labels = $state<string[]>([]);
 let labelStatus = $state<string>('No labels loaded (using class numbers)');
 
-let lastVideoTime = 0;
 let timestampOffset = 0;
+let lastMediaPipeTimestamp = 0;
 
+function getMonotonicTimestamp(videoCurrentTimeSec: number): number {
+	let ts = Math.round((videoCurrentTimeSec * 1000) + timestampOffset);
+
+	if (ts <= lastMediaPipeTimestamp) {
+		timestampOffset = (lastMediaPipeTimestamp + 16) - Math.round(videoCurrentTimeSec * 1000);
+		ts = Math.round((videoCurrentTimeSec * 1000) + timestampOffset);
+	}
+
+	lastMediaPipeTimestamp = ts;
+	return ts;
+}
 
 function interp1d(newX: number[], oldX: number[], oldY: number[]): number[] {
 const n = oldX.length;
@@ -277,7 +296,7 @@ async function handleModeChange(newMode: 'camera' | 'video') {
 	if (appState.input === newMode) return;
 	appState.input = newMode;
 	rawFrameBuffer = [];
-	lastVideoTime = 0;
+	lastMediaPipeTimestamp = 0;
 	timestampOffset = 0;
 
 	if (appState.input === 'camera') {
@@ -301,20 +320,24 @@ function handleVideoUpload(event: Event) {
 	revokeVideoUrl();
 
 	// Reset timestamp offset and frame buffer on new video upload
-	lastVideoTime = 0;
-	timestampOffset = 0;
 	rawFrameBuffer = [];
+  	appState.topPredictions = [];
+  	appState.prediction = '—';
 
-	videoObjectUrl = URL.createObjectURL(file);
-	appState.videoFile = file.name;
+	if (canvasCtx && canvasElement) {
+    	canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  	}
 
-	if (videoElement) {
-		videoElement.srcObject = null;
-		videoElement.src = videoObjectUrl;
-		videoElement.loop = true;
-		videoElement.play();
-	}
-	}
+  	videoObjectUrl = URL.createObjectURL(file);
+  	appState.videoFile = file.name;
+
+  	if (videoElement) {
+    	videoElement.srcObject = null;
+    	videoElement.src = videoObjectUrl;
+    	videoElement.loop = true;
+    	videoElement.play();
+  	}
+}
 
 	// Continuous frame collection loop
 function startDetectionLoop() {
@@ -326,114 +349,156 @@ function startDetectionLoop() {
 		videoElement.readyState >= 2 &&
 		!videoElement.paused
 		) {
-		let timestamp: number;
+		try {
+        let timestamp: number;
 
-		if (appState.input === 'camera') {
+        if (appState.input === 'camera') {
 			timestamp = performance.now();
-		} else {
-			const currentTime = videoElement.currentTime;
 			
-			// Check if video looped (current time went backward)
-			if (currentTime < lastVideoTime) {
-			timestampOffset += lastVideoTime * 1000;
-			rawFrameBuffer = []; // Clear buffer so loop #1 frames don't bleed into loop #2
+			if (timestamp <= lastMediaPipeTimestamp) {
+				timestamp = lastMediaPipeTimestamp + 16;
 			}
-			
-			lastVideoTime = currentTime;
-			timestamp = Math.round((currentTime * 1000) + timestampOffset);
-		}
+			lastMediaPipeTimestamp = timestamp;
+        } else {
+          
+          	timestamp = getMonotonicTimestamp(videoElement.currentTime);
+        }
 
-		const poseRes = poseLandmarker.detectForVideo(videoElement, timestamp);
-		const handRes = handLandmarker.detectForVideo(videoElement, timestamp);
+        const poseRes = poseLandmarker.detectForVideo(videoElement, timestamp);
+        const handRes = handLandmarker.detectForVideo(videoElement, timestamp);
 
-		// Draw skeleton 
-		if (!canvasCtx && canvasElement) {
-			canvasCtx = canvasElement.getContext('2d');
-			if (canvasCtx) drawingUtils = new DrawingUtils(canvasCtx);
-		}
+        // --- Canvas Overlay Setup ---
+        if (!canvasCtx && canvasElement) {
+          canvasCtx = canvasElement.getContext('2d');
+          if (canvasCtx) drawingUtils = new DrawingUtils(canvasCtx);
+        }
 
-		if (canvasElement && videoElement && canvasCtx && drawingUtils) {
-			// Sync canvas internal resolution with the actual video resolution
-			if (canvasElement.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
-			canvasElement.width = videoElement.videoWidth;
-			canvasElement.height = videoElement.videoHeight;
+        if (canvasElement && videoElement && canvasCtx && drawingUtils) {
+			if (
+				canvasElement.width !== videoElement.videoWidth &&
+				videoElement.videoWidth > 0
+			) {
+				canvasElement.width = videoElement.videoWidth;
+				canvasElement.height = videoElement.videoHeight;
 			}
 
 			canvasCtx.save();
 			canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-			// Draw Pose (Body)
+          // Draw Pose
 			if (poseRes.landmarks) {
-			for (const landmark of poseRes.landmarks) {
+				for (const landmark of poseRes.landmarks) {
 				drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
 				drawingUtils.drawLandmarks(landmark, { radius: 3, color: '#FF0000' });
-			}
+				}
 			}
 
-			// Draw Hands
+          	// Draw Hands
 			if (handRes.landmarks) {
-			for (const landmarks of handRes.landmarks) {
+				for (const landmarks of handRes.landmarks) {
 				drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#00FFFF', lineWidth: 2 });
 				drawingUtils.drawLandmarks(landmarks, { radius: 2, color: '#0000FF' });
-			}
+				}
 			}
 			canvasCtx.restore();
-		}
+        }
 
-		// 1. Extract Pose (25 joints)
-		let posePoints: number[][];
-		if (poseRes.landmarks && poseRes.landmarks.length > 0) {
-			posePoints = poseRes.landmarks[0]
-			.slice(0, POSE_KEEP)
-			.map((pt) => [pt.x, pt.y, pt.z]);
-		} else {
-			posePoints = new Array(POSE_KEEP).fill(0).map(() => [0, 0, 0]);
-		}
+        // --- Keypoint Extraction ---
+        let posePoints: number[][];
+        if (poseRes.landmarks && poseRes.landmarks.length > 0) {
+          posePoints = poseRes.landmarks[0]
+            .slice(0, POSE_KEEP)
+            .map((pt) => [pt.x, pt.y, pt.z]);
+        } else {
+          posePoints = new Array(POSE_KEEP).fill(0).map(() => [0, 0, 0]);
+        }
 
-		// 2. Extract Hands (Left: 21, Right: 21)
-		let leftHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
-		let rightHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
+        let leftHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
+        let rightHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
 
-		if (handRes.landmarks && handRes.handedness) {
-			for (let h = 0; h < handRes.handedness.length; h++) {
-			const label = handRes.handedness[h][0]?.categoryName;
-			const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y, pt.z]);
-			if (label === 'Left') leftHandPoints = pts;
-			else if (label === 'Right') rightHandPoints = pts;
-			}
-		}
+        if (handRes.landmarks && handRes.handedness) {
+          for (let h = 0; h < handRes.handedness.length; h++) {
+            const label = handRes.handedness[h][0]?.categoryName;
+            const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y, pt.z]);
+            if (label === 'Left') leftHandPoints = pts;
+            else if (label === 'Right') rightHandPoints = pts;
+          }
+        }
 
-		// Concatenate frame keypoints -> [67][3]
-		const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints];
-		rawFrameBuffer.push(currentFrame);
+        const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints];
+        rawFrameBuffer.push(currentFrame);
 
-		// Maintain rolling window buffer (up to 90 raw frames before resampling)
-		if (rawFrameBuffer.length > 90) {
-			rawFrameBuffer.shift();
-		}
+        if (rawFrameBuffer.length > 90) {
+          rawFrameBuffer.shift();
+        }
 
-		// Run local model inference if session exists and we have enough frames
-		if (rawFrameBuffer.length >= 10 && session) {
-			await runInference();
-		}
-		}
+        if (rawFrameBuffer.length >= 10 && session) {
+          await runInference();
+        }
+      	} catch (err) {
+        console.error('Error during frame detection:', err);
+      	}
+    }
 
-		animFrameId = requestAnimationFrame(processFrame);
-	};
+    
+    animFrameId = requestAnimationFrame(processFrame);
+  };
 
-	processFrame();
+  processFrame();
 }
 
-function argmax(array: Float32Array): number {
-	let maxIdx = 0;
-	let maxVal = array[0];
-	for (let i = 1; i < array.length; i++) {
-		if (array[i] > maxVal) {
-		maxVal = array[i];
-		maxIdx = i;
-		}
-	}
-	return maxIdx;
+// function argmax(array: Float32Array): number {
+// 	let maxIdx = 0;
+// 	let maxVal = array[0];
+// 	for (let i = 1; i < array.length; i++) {
+// 		if (array[i] > maxVal) {
+// 		maxVal = array[i];
+// 		maxIdx = i;
+// 		}
+// 	}
+// 	return maxIdx;
+// }
+
+function softmax(logits: Float32Array): number[] {
+  let maxVal = -Infinity;
+  for (let i = 0; i < logits.length; i++) {
+    if (logits[i] > maxVal) maxVal = logits[i];
+  }
+
+  const exps = new Float64Array(logits.length);
+  let sumExps = 0;
+  for (let i = 0; i < logits.length; i++) {
+    const expVal = Math.exp(logits[i] - maxVal);
+    exps[i] = expVal;
+    sumExps += expVal;
+  }
+
+  const probs = new Array(logits.length);
+  for (let i = 0; i < logits.length; i++) {
+    probs[i] = exps[i] / sumExps;
+  }
+  return probs;
+}
+
+function getTopKPredictions(
+	logits: Float32Array,
+	labelsList: string[],
+	k: number = 5
+	) {
+	const probabilities = softmax(logits);
+
+	// Map each probability to its label & class index
+	const rankedList = probabilities.map((prob, index) => ({
+		label: labelsList[index] ?? `Class ${index}`,
+		confidence: prob, // 0.0 to 1.0
+		percentage: (prob * 100).toFixed(1) + '%' // e.g. "80.5%"
+	}));
+
+	// Sort descending by highest confidence score
+	rankedList.sort((a, b) => b.confidence - a.confidence);
+
+	// Return the top K items
+	return rankedList.slice(0, k);
 }
 
 async function runInference() {
@@ -448,9 +513,11 @@ async function runInference() {
 
 		const outputs = await session.run({ input: inputTensor });
 		const outputData = outputs.output.data as Float32Array;
+		const topPredictions = getTopKPredictions(outputData, labels, 5);
 
-		const predictedClass = argmax(outputData);
-		appState.prediction = labels[predictedClass] ?? `Class ${predictedClass}`;
+		appState.topPredictions = topPredictions;
+		appState.prediction = topPredictions[0]?.label ?? 'Unknown';
+		
 	} catch (err) {
 		console.error('Inference error:', err);
 	}
@@ -504,103 +571,191 @@ async function handleLabelsUpload(event: Event) {
 </script>
 
 <main>
-<h2>Sign Language Recognizer</h2>
+<h2>Sign Language Detection</h2>
 
-<div class="card">
-	<div class="toggle-group">
-	<button 
-		class="toggle-btn" 
-		class:active={appState.input === 'camera'} 
-		onclick={() => handleModeChange('camera')}
-	>
-		Camera
-	</button>
-	<button 
-		class="toggle-btn" 
-		class:active={appState.input === 'video'} 
-		onclick={() => handleModeChange('video')}
-	>
-		Video file (.mp4, .webm)
-	</button>
+<div class="grid">
+
+<div class="column left-col">
+	<div class="window">
+	<div class="title-bar">
+		<div class="title-bar-text">Model Selection</div>
 	</div>
-
-	{#if appState.input === 'video'}
-	<div class="field">
-		<label for="video-input"><strong>Upload Video File (.mp4, .webm):</strong></label>
+	<div class="window-body has-space">
+		<label for="model-input"><strong>Select ONNX Model File (.onnx):</strong></label>
 		<input 
-			id="video-input" 
+			id="model-input"
 			type="file" 
-			accept="video/*" 
-			onchange={handleVideoUpload} 
+			accept=".onnx" 
+			onchange={handleModelUpload}
+			disabled={appState.isLoading} 
 		/>
-		<p class="status">Selected Video: <strong>{appState.videoFile}</strong></p>
+		<p class="status">
+			Model Status: <strong>{appState.isLoading ? 'Loading model into memory...' : appState.modelName}</strong>
+		</p>
 	</div>
-	{/if}
 </div>
 
-<div class="card">
-	<label for="model-input"><strong>Select ONNX Model File (.onnx):</strong></label>
+
+<div class="window">
+  	<div class="title-bar">
+    	<div class="title-bar-text">Label Selection</div>
+  	</div>
+  	<div class="window-body has-space">
+    <label for="label-input"><strong>Upload Labels File (.json):</strong></label>
 	<input 
-		id="model-input"
+		id="label-input"
 		type="file" 
-		accept=".onnx" 
-		onchange={handleModelUpload}
-		disabled={appState.isLoading} 
+		accept=".json" 
+		onchange={handleLabelsUpload} 
 	/>
 	<p class="status">
-		Model Status: <strong>{appState.isLoading ? 'Loading model into memory...' : appState.modelName}</strong>
+		Label Status: <strong>{labelStatus}</strong>
 	</p>
+  </div>
 </div>
-
-<div class="card">
-	<label for="label-input"><strong>Upload Labels File (.json):</strong></label>
-	<input 
-	id="label-input"
-	type="file" 
-	accept=".json" 
-	onchange={handleLabelsUpload} 
-	/>
-	<p class="status">
-	Label Status: <strong>{labelStatus}</strong>
-	</p>
 </div>
-
-<div class="video-container">
-	<video 
-		bind:this={videoElement} 
-		autoplay 
-		playsinline 
-		muted
-		controls={appState.input === 'video'}
-		class:mirrored={appState.input === 'camera'}
-	></video>
-	
-	<canvas 
-	bind:this={canvasElement} 
-	class="canvas-overlay" 
-	class:mirrored={appState.input === 'camera'}
-	></canvas>
-
-	<div class="overlay">
-		Detected Sign: <strong>{appState.prediction}</strong>
+<div class="column center-col">
+<div class="window active">
+	<div class="title-bar">
+		<div class="title-bar-text">Input Selection</div>
+		<div class="title-bar-controls">
+		<button aria-label="Minimize"></button>
+		<button aria-label="Maximize"></button>
+		<button aria-label="Close"></button>
+		</div>
 	</div>
+	<div class="window-body has-space">
+		<div class="toggle-group">
+		<button 
+			class="toggle-btn" 
+			class:active={appState.input === 'camera'} 
+			onclick={() => handleModeChange('camera')}
+		>
+			Camera
+		</button>
+		<button 
+			class="toggle-btn" 
+			class:active={appState.input === 'video'} 
+			onclick={() => handleModeChange('video')}
+		>
+			Video file (.mp4, .webm)
+		</button>
+		</div>
+
+		{#if appState.input === 'video'}
+		<div class="field">
+			<label for="video-input" ><strong>Upload Video File (.mp4, .webm):</strong></label>
+			<input 
+				id="video-input" 
+				type="file" 
+				accept="video/*" 
+				onchange={handleVideoUpload} 
+			/>
+			<p class="status">Selected Video: <strong>{appState.videoFile}</strong></p>
+		</div>
+		{/if}
+		<div class="video-container">
+			<video 
+				bind:this={videoElement} 
+				autoplay 
+				playsinline 
+				muted
+				controls={appState.input === 'video'}
+				class:mirrored={appState.input === 'camera'}
+			></video>
+			
+			<canvas 
+			bind:this={canvasElement} 
+			class="canvas-overlay" 
+			class:mirrored={appState.input === 'camera'}
+			></canvas>
+
+			<div class="overlay">
+				Detected Sign: <strong>{appState.prediction}</strong>
+			</div>
+		</div>
+	</div>
+	</div>
+
 </div>
+	
+<div class="column right-col">
+<div class="window active">
+  <div class="title-bar">
+    <div class="title-bar-text">Predictions Rankings</div>
+    <div class="title-bar-controls">
+      <button aria-label="Minimize"></button>
+      <button aria-label="Maximize"></button>
+      <button aria-label="Close"></button>
+    </div>
+  </div>
+  <div class="window-body has-space">
+    <h2>Top Predictions</h2>
+
+	{#if appState.topPredictions.length === 0}
+		<p>Waiting for frames...</p>
+	{:else}
+		<table class="has-shadow predictions-table">
+		<thead>
+				<tr>
+					<th>Ranking</th>
+					<th>Label</th>
+					<th>Confidence</th>
+				</tr>
+		</thead>
+		{#each appState.topPredictions as item, index (item.label)}
+			
+			
+			<tbody>
+				<tr>
+					<td>#{index + 1}</td>
+					<td>{item.label}</td>
+					<td>{item.percentage}</td>
+				</tr>
+			</tbody>
+		
+		{/each}
+		</table>
+		
+		
+	{/if}
+  </div>
+</div>
+
+</div>
+
+</div>
+
 </main>
 
 <style>
 
-	main {
-		padding: 20px;
-		font-family: sans-serif;
-		max-width: 680px;
-	}
-	.card {
-		margin-bottom: 15px;
-		padding: 14px;
-		border: 1px solid #ddd;
-		border-radius: 8px;
-		background-color: #fcfcfc;
+
+main {
+	padding: 20px;
+	font-family: sans-serif;
+	max-width: 1280px;
+	margin: 0 auto;
 }
+
+.window-body {
+	font-size: 1.5em;
+}
+
+.grid {
+	display: grid;
+	grid-template-columns: 1fr 2fr 1fr;
+	gap: 20px;
+	align-items: start;
+}
+
+.column {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	min-width: 0;
+}
+
 .toggle-group {
 	display: flex;
 	gap: 10px;
@@ -618,7 +773,7 @@ async function handleLabelsUpload(event: Event) {
 }
 .toggle-btn.active {
 	background: #0070f3;
-	color: white;
+	color: black;
 	border-color: #0050b3;
 	font-weight: bold;
 }
@@ -634,18 +789,31 @@ async function handleLabelsUpload(event: Event) {
 }
 .video-container {
 	position: relative;
-	width: 640px;
-	height: 480px;
+	width: 100%;
+	height: auto;
 	background-color: #000;
 	border-radius: 8px;
 	overflow: hidden;
 }
-video {
+
+
+.video-container video {
+	display: block;
+	width: 100%;
+	height: auto;
+	max-height: 70vh;
+}
+
+.video-container canvas{
+	position: absolute;
+	top: 0;
+	left: 0;
 	width: 100%;
 	height: 100%;
-	object-fit: cover;
+	pointer-events: none;	
 }
-video.mirrored {
+
+video.mirrored, canvas.mirrored {
 	transform: scaleX(-1);
 }
 .overlay {
@@ -661,16 +829,17 @@ video.mirrored {
 }
 
 .canvas-overlay {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	pointer-events: none;
 	z-index: 5;
 }
 
-canvas.mirrored {
-	transform: scaleX(-1);
+.predictions-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+@media (max-width: 900px) {
+	.grid {
+		grid-template-columns: 1fr;
+	}
 }
 </style>
