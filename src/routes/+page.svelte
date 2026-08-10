@@ -44,6 +44,7 @@ let canvasCtx: CanvasRenderingContext2D | null = null;
 let drawingUtils: DrawingUtils | null = null;
 let labels = $state<string[]>([]);
 let labelStatus = $state<string>('No labels loaded (using class numbers)');
+let isInferencing = false;
 
 let timestampOffset = 0;
 let lastMediaPipeTimestamp = 0;
@@ -429,14 +430,14 @@ function startDetectionLoop() {
         rawFrameBuffer.push(currentFrame);
 
         if (rawFrameBuffer.length > 90) {
-          rawFrameBuffer.shift();
+          	rawFrameBuffer.shift();
         }
 
-        if (rawFrameBuffer.length >= 10 && session) {
-          await runInference();
+        if (rawFrameBuffer.length >= 10 && session && !isInferencing) {
+        	runInference();
         }
       	} catch (err) {
-        console.error('Error during frame detection:', err);
+        	console.error('Error during frame detection:', err);
       	}
     }
 
@@ -503,6 +504,7 @@ function getTopKPredictions(
 
 async function runInference() {
 	if (!session || rawFrameBuffer.length === 0) return;
+	isInferencing = true;
 
 	try {
 		// Execute Python-equivalent preprocessing
@@ -520,6 +522,8 @@ async function runInference() {
 		
 	} catch (err) {
 		console.error('Inference error:', err);
+	} finally {
+		isInferencing = false;
 	}
 }
 
@@ -571,7 +575,7 @@ async function handleLabelsUpload(event: Event) {
 </script>
 
 <main>
-<h2>Sign Language Detection</h2>
+<h1>Sign Language Detection</h1>
 
 <div class="grid">
 
