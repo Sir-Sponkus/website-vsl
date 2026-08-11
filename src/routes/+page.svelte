@@ -27,7 +27,8 @@ modelName: 'No model loaded',
 prediction: '—', // topPredictions[0]
 topPredictions: [] as PredictionItem[], 
 isLoading: false,
-videoFile: 'No video selected'
+videoFile: 'No video selected',
+isDetecting: false
 });
 
 // DOM element bindings & internal references
@@ -44,10 +45,33 @@ let canvasCtx: CanvasRenderingContext2D | null = null;
 let drawingUtils: DrawingUtils | null = null;
 let labels = $state<string[]>([]);
 let labelStatus = $state<string>('No labels loaded (using class numbers)');
-let isInferencing = false;
 
 let timestampOffset = 0;
 let lastMediaPipeTimestamp = 0;
+
+async function toggleDetection() {
+    if (!appState.isDetecting) {
+        rawFrameBuffer.length = 0;
+        appState.isDetecting = true;
+        appState.prediction = 'Recording gesture...';
+        appState.topPredictions = [];
+
+        if (appState.input === 'video' && videoElement) {
+            videoElement.play();
+        }
+    } else {
+        appState.isDetecting = false;
+
+        if (appState.input === 'video' && videoElement) {
+            videoElement.pause();
+        }
+
+        appState.prediction = 'Analyzing sign...';
+        await runInferenceForWindow();
+        rawFrameBuffer.length = 0;
+    }
+}
+
 
 function getMonotonicTimestamp(videoCurrentTimeSec: number): number {
 	let ts = Math.round((videoCurrentTimeSec * 1000) + timestampOffset);
@@ -299,6 +323,7 @@ async function handleModeChange(newMode: 'camera' | 'video') {
 	rawFrameBuffer = [];
 	lastMediaPipeTimestamp = 0;
 	timestampOffset = 0;
+	appState.isDetecting = false;
 
 	if (appState.input === 'camera') {
 		await startCamera();
@@ -324,6 +349,7 @@ function handleVideoUpload(event: Event) {
 	rawFrameBuffer = [];
   	appState.topPredictions = [];
   	appState.prediction = '—';
+	appState.isDetecting = false;
 
 	if (canvasCtx && canvasElement) {
     	canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -335,34 +361,37 @@ function handleVideoUpload(event: Event) {
   	if (videoElement) {
     	videoElement.srcObject = null;
     	videoElement.src = videoObjectUrl;
-    	videoElement.loop = true;
-    	videoElement.play();
+    	videoElement.loop = false;
   	}
 }
 
-	// Continuous frame collection loop
+function handleVideoEnded() {
+	if (appState.isDetecting && appState.input === 'video') {
+		toggleDetection();
+	}
+}
+
 function startDetectionLoop() {
-	const processFrame = async () => {
-		if (
-		videoElement &&
-		poseLandmarker &&
-		handLandmarker &&
-		videoElement.readyState >= 2 &&
-		!videoElement.paused
-		) {
-		try {
+  const processFrame = async () => {
+    if (
+      videoElement &&
+      poseLandmarker &&
+      handLandmarker &&
+      videoElement.readyState >= 2 &&
+      !videoElement.paused
+    ) {
+      try {
         let timestamp: number;
 
         if (appState.input === 'camera') {
-			timestamp = performance.now();
-			
-			if (timestamp <= lastMediaPipeTimestamp) {
-				timestamp = lastMediaPipeTimestamp + 16;
-			}
-			lastMediaPipeTimestamp = timestamp;
-        } else {
+          timestamp = performance.now();
           
-          	timestamp = getMonotonicTimestamp(videoElement.currentTime);
+          if (timestamp <= lastMediaPipeTimestamp) {
+            timestamp = lastMediaPipeTimestamp + 16;
+          }
+          lastMediaPipeTimestamp = timestamp;
+        } else {
+          timestamp = getMonotonicTimestamp(videoElement.currentTime);
         }
 
         const poseRes = poseLandmarker.detectForVideo(videoElement, timestamp);
@@ -375,73 +404,71 @@ function startDetectionLoop() {
         }
 
         if (canvasElement && videoElement && canvasCtx && drawingUtils) {
-			if (
-				canvasElement.width !== videoElement.videoWidth &&
-				videoElement.videoWidth > 0
-			) {
-				canvasElement.width = videoElement.videoWidth;
-				canvasElement.height = videoElement.videoHeight;
-			}
+          if (
+            canvasElement.width !== videoElement.videoWidth &&
+            videoElement.videoWidth > 0
+          ) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+          }
 
-			canvasCtx.save();
-			canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
           // Draw Pose
-			if (poseRes.landmarks) {
-				for (const landmark of poseRes.landmarks) {
-				drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
-				drawingUtils.drawLandmarks(landmark, { radius: 3, color: '#FF0000' });
-				}
-			}
+          if (poseRes.landmarks) {
+            for (const landmark of poseRes.landmarks) {
+              drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
+              drawingUtils.drawLandmarks(landmark, { radius: 3, color: '#FF0000' });
+            }
+          }
 
-          	// Draw Hands
-			if (handRes.landmarks) {
-				for (const landmarks of handRes.landmarks) {
-				drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#00FFFF', lineWidth: 2 });
-				drawingUtils.drawLandmarks(landmarks, { radius: 2, color: '#0000FF' });
-				}
-			}
-			canvasCtx.restore();
+          // Draw Hands
+          if (handRes.landmarks) {
+            for (const landmarks of handRes.landmarks) {
+              drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#00FFFF', lineWidth: 2 });
+              drawingUtils.drawLandmarks(landmarks, { radius: 2, color: '#0000FF' });
+            }
+          }
+          canvasCtx.restore();
         }
 
         // --- Keypoint Extraction ---
-        let posePoints: number[][];
-        if (poseRes.landmarks && poseRes.landmarks.length > 0) {
-          posePoints = poseRes.landmarks[0]
-            .slice(0, POSE_KEEP)
-            .map((pt) => [pt.x, pt.y, pt.z]);
-        } else {
-          posePoints = new Array(POSE_KEEP).fill(0).map(() => [0, 0, 0]);
-        }
+        if (appState.isDetecting) {
+			let posePoints: number[][];
+			if (poseRes.landmarks && poseRes.landmarks.length > 0) {
+				posePoints = poseRes.landmarks[0]
+				.slice(0, POSE_KEEP)
+				.map((pt) => [pt.x, pt.y, pt.z]);
+			} else {
+				posePoints = new Array(POSE_KEEP).fill(0).map(() => [0, 0, 0]);
+			}
 
-        let leftHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
-        let rightHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
+			let leftHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
+			let rightHandPoints: number[][] = new Array(HAND_JOINTS).fill(0).map(() => [0, 0, 0]);
 
-        if (handRes.landmarks && handRes.handedness) {
-          for (let h = 0; h < handRes.handedness.length; h++) {
-            const label = handRes.handedness[h][0]?.categoryName;
-            const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y, pt.z]);
-            if (label === 'Left') leftHandPoints = pts;
-            else if (label === 'Right') rightHandPoints = pts;
-          }
-        }
+			if (handRes.landmarks && handRes.handedness) {
+				for (let h = 0; h < handRes.handedness.length; h++) {
+					const label = handRes.handedness[h][0]?.categoryName;
+					const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y, pt.z]);
+					if (label === 'Left') leftHandPoints = pts;
+					else if (label === 'Right') rightHandPoints = pts;
+				}
+			}
 
-        const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints];
-        rawFrameBuffer.push(currentFrame);
+			const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints];
+			rawFrameBuffer.push(currentFrame);
 
-        if (rawFrameBuffer.length > 90) {
-          	rawFrameBuffer.shift();
-        }
-
-        if (rawFrameBuffer.length >= 10 && session && !isInferencing) {
-        	runInference();
-        }
-      	} catch (err) {
-        	console.error('Error during frame detection:', err);
-      	}
+			
+			if (rawFrameBuffer.length >= TARGET_FRAMES) {
+				toggleDetection();
+			}
+        } 
+      } catch (err) { 
+        console.error('Error during frame detection:', err);
+      }
     }
 
-    
     animFrameId = requestAnimationFrame(processFrame);
   };
 
@@ -502,29 +529,61 @@ function getTopKPredictions(
 	return rankedList.slice(0, k);
 }
 
-async function runInference() {
-	if (!session || rawFrameBuffer.length === 0) return;
-	isInferencing = true;
+// async function runInference() {
+// 	if (!session || rawFrameBuffer.length === 0) return;
+// 	isInferencing = true;
 
-	try {
-		// Execute Python-equivalent preprocessing
-		const processedData = preprocessKeypoints(rawFrameBuffer);
+// 	try {
+// 		// Execute Python-equivalent preprocessing
+// 		const processedData = preprocessKeypoints(rawFrameBuffer);
 
-		// Create ONNX Tensor with shape [1, 60, 67, 2]
-		const inputTensor = new ort.Tensor('float32', processedData, [1, TARGET_FRAMES, NUM_JOINTS, 2]);
+// 		// Create ONNX Tensor with shape [1, 60, 67, 2]
+// 		const inputTensor = new ort.Tensor('float32', processedData, [1, TARGET_FRAMES, NUM_JOINTS, 2]);
 
-		const outputs = await session.run({ input: inputTensor });
-		const outputData = outputs.output.data as Float32Array;
-		const topPredictions = getTopKPredictions(outputData, labels, 5);
+// 		const outputs = await session.run({ input: inputTensor });
+// 		const outputData = outputs.output.data as Float32Array;
+// 		const topPredictions = getTopKPredictions(outputData, labels, 5);
 
-		appState.topPredictions = topPredictions;
-		appState.prediction = topPredictions[0]?.label ?? 'Unknown';
+// 		appState.topPredictions = topPredictions;
+// 		appState.prediction = topPredictions[0]?.label ?? 'Unknown';
 		
-	} catch (err) {
-		console.error('Inference error:', err);
-	} finally {
-		isInferencing = false;
-	}
+// 	} catch (err) {
+// 		console.error('Inference error:', err);
+// 	} finally {
+// 		isInferencing = false;
+// 	}
+// }
+
+async function runInferenceForWindow() {
+    if (!session || rawFrameBuffer.length < 10) {
+        appState.prediction = 'Sequence too short';
+        return;
+    }
+
+    appState.isLoading = true;
+
+    try {
+        
+        const processedData = preprocessKeypoints(rawFrameBuffer);
+
+        
+        const inputTensor = new ort.Tensor('float32', processedData, [1, TARGET_FRAMES, NUM_JOINTS, 2]);
+
+        
+        const outputs = await session.run({ input: inputTensor });
+        const outputData = outputs.output.data as Float32Array;
+        const topPredictions = getTopKPredictions(outputData, labels, 5);
+
+        
+        appState.topPredictions = topPredictions;
+        appState.prediction = topPredictions[0]?.label ?? 'Unknown';
+
+    } catch (err) {
+        console.error('Inference error:', err);
+        appState.prediction = 'Error analyzing sign';
+    } finally {
+        appState.isLoading = false;
+    }
 }
 
 async function handleModelUpload(event: Event) {
@@ -660,12 +719,12 @@ async function handleLabelsUpload(event: Event) {
 		{/if}
 		<div class="video-container">
 			<video 
-				bind:this={videoElement} 
-				autoplay 
+				bind:this={videoElement}  
 				playsinline 
 				muted
 				controls={appState.input === 'video'}
 				class:mirrored={appState.input === 'camera'}
+				onended={handleVideoEnded}
 			></video>
 			
 			<canvas 
@@ -674,10 +733,26 @@ async function handleLabelsUpload(event: Event) {
 			class:mirrored={appState.input === 'camera'}
 			></canvas>
 
-			<div class="overlay">
-				Detected Sign: <strong>{appState.prediction}</strong>
+			<div class="status-indicator" class:active={appState.isDetecting}>
+				<span class="status-dot"></span>
+				<span class="status-text">{appState.isDetecting ? 'DETECTING' : 'IDLE'}</span>
 			</div>
+
 		</div>
+
+		<div class="controls-row">
+        <div class="detected-box">
+          Detected Sign: <strong>{appState.prediction}</strong>
+        </div>
+        <button 
+          type="button" 
+          class="toggle-btn detection-btn" 
+          class:active={appState.isDetecting} 
+          onclick={toggleDetection}
+        >
+          {appState.isDetecting ? 'Stop Detection' : 'Start Detection'}
+        </button>
+      </div>
 	</div>
 	</div>
 
@@ -820,16 +895,35 @@ main {
 video.mirrored, canvas.mirrored {
 	transform: scaleX(-1);
 }
-.overlay {
-	position: absolute;
-	bottom: 15px;
-	left: 15px;
-	padding: 10px 18px;
-	background: rgba(0, 0, 0, 0.75);
-	color: #fff;
+.controls-row {
+	display: flex;
+	gap: 10px;
+	margin-top: 10px;
+	align-items: stretch;
+}
+
+.detected-box {
+	flex: 1;
+	padding: 10px;
+	font-size: 1em;
+	border: 1px solid #ccc;
+	background: #f8f9fa;
 	border-radius: 6px;
-	font-size: 1.2em;
-	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	}
+
+
+.detection-btn {
+  	margin: 0;
+}
+
+.detection-btn.active {
+	background: #d9534f;
+	color: white;
+	border-color: #d43f3a;
 }
 
 .canvas-overlay {
@@ -845,5 +939,52 @@ video.mirrored, canvas.mirrored {
 	.grid {
 		grid-template-columns: 1fr;
 	}
+}
+
+.status-indicator {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #f44336;
+    border-radius: 20px;
+    color: #f44336;
+    font-size: 0.8em;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #f44336;
+    box-shadow: 0 0 6px #f44336;
+    transition: all 0.2s ease;
+}
+
+
+.status-indicator.active {
+    border-color: #4caf50;
+    color: #4caf50;
+}
+
+.status-indicator.active .status-dot {
+    background-color: #4caf50;
+    box-shadow: 0 0 8px #4caf50;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+    100% { opacity: 1; transform: scale(1); }
 }
 </style>
