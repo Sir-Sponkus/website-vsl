@@ -7,13 +7,15 @@ import {
   FilesetResolver,
   DrawingUtils
 } from '@mediapipe/tasks-vision';
-import "7.css/dist/7.css";
+import '@webtui/css'
 
 
 const TARGET_FRAMES = 60;
 const POSE_KEEP = 33;
 const HAND_JOINTS = 21;
-const NUM_JOINTS = 75; 
+const NUM_JOINTS = 75;
+const NUM_CHANNELS = 6;
+const NUM_CLASSES = 400;
 
 interface PredictionItem {
   label: string;
@@ -52,7 +54,6 @@ let lastMediaPipeTimestamp = 0;
 const CHA_XUONG_75: number[] = (() => {
 	const cha = Array.from({ length: 75 }, (_, i) => i);
 
-	
 	const poseParent: Record<number, number> = {
 		11: 11, 12: 11, 0: 11,
 		13: 11, 15: 13, 17: 15, 19: 15, 21: 15,
@@ -65,14 +66,11 @@ const CHA_XUONG_75: number[] = (() => {
 		cha[+k] = v;
 	}
 
-	
 	const tay = [0, 0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19];
 
-	
 	for (let i = 0; i < 21; i++) {
 		cha[33 + i] = (i === 0) ? 15 : 33 + tay[i];
 	}
-	
 	for (let i = 0; i < 21; i++) {
 		cha[54 + i] = (i === 0) ? 16 : 54 + tay[i];
 	}
@@ -116,6 +114,11 @@ function getMonotonicTimestamp(videoCurrentTimeSec: number): number {
 }
 
 
+function cleanValue(v: number): number {
+	return Number.isFinite(v) ? v : 0.0;
+}
+
+
 function preprocessKeypoints(rawBuffer: number[][][], targetLen = TARGET_FRAMES): number[][][] {
 	const T = rawBuffer.length;
 	if (T === 0) {
@@ -125,13 +128,21 @@ function preprocessKeypoints(rawBuffer: number[][][], targetLen = TARGET_FRAMES)
 	}
 
 	
+	const cleaned: number[][][] = Array.from({ length: T }, (_, t) =>
+		Array.from({ length: NUM_JOINTS }, (_, j) => [
+			cleanValue(rawBuffer[t][j][0]),
+			cleanValue(rawBuffer[t][j][1])
+		])
+	);
+
+	
 	const normalizedSeq: number[][][] = Array.from({ length: T }, () =>
 		Array.from({ length: NUM_JOINTS }, () => [0, 0])
 	);
 
 	for (let t = 0; t < T; t++) {
-		const l = rawBuffer[t][11]; // left shoulder
-		const r = rawBuffer[t][12]; // right shoulder
+		const l = cleaned[t][11]; // left shoulder (vai_t)
+		const r = cleaned[t][12]; // right shoulder (vai_p)
 
 		const cx = (l[0] + r[0]) / 2.0;
 		const cy = (l[1] + r[1]) / 2.0;
@@ -140,13 +151,8 @@ function preprocessKeypoints(rawBuffer: number[][][], targetLen = TARGET_FRAMES)
 		const width = Math.max(Math.hypot(dx, dy), 1e-5);
 
 		for (let j = 0; j < NUM_JOINTS; j++) {
-			const rawX = rawBuffer[t][j][0];
-			const rawY = rawBuffer[t][j][1];
-			const x = Number.isNaN(rawX) ? 0.0 : rawX;
-			const y = Number.isNaN(rawY) ? 0.0 : rawY;
-
-			normalizedSeq[t][j][0] = (x - cx) / width;
-			normalizedSeq[t][j][1] = (y - cy) / width;
+			normalizedSeq[t][j][0] = (cleaned[t][j][0] - cx) / width;
+			normalizedSeq[t][j][1] = (cleaned[t][j][1] - cy) / width;
 		}
 	}
 
@@ -171,12 +177,12 @@ function preprocessKeypoints(rawBuffer: number[][][], targetLen = TARGET_FRAMES)
 	return resampled;
 }
 
-
-function buildTensorData(kpXY: number[][][], numChannels: number, numViews: number): Float32Array {
+// Tensor: (B,60,75,6)
+function buildTensorData(kpXY: number[][][]): Float32Array {
 	const T = TARGET_FRAMES;
 	const K = NUM_JOINTS;
 
-	const flatPerView = new Float32Array(T * K * numChannels);
+	const flat = new Float32Array(T * K * NUM_CHANNELS);
 	let idx = 0;
 
 	for (let t = 0; t < T; t++) {
@@ -184,45 +190,198 @@ function buildTensorData(kpXY: number[][][], numChannels: number, numViews: numb
 			const x = kpXY[t][j][0];
 			const y = kpXY[t][j][1];
 
-			if (numChannels === 2) {
-				flatPerView[idx++] = x;
-				flatPerView[idx++] = y;
-			} else {
-			
-				const p = CHA_XUONG_75[j];
-				const px = kpXY[t][p][0];
-				const py = kpXY[t][p][1];
-				const bx = x - px;
-				const by = y - py;
+			const p = CHA_XUONG_75[j];
+			const px = kpXY[t][p][0];
+			const py = kpXY[t][p][1];
+			const bx = x - px;
+			const by = y - py;
 
-				let mx = 0;
-				let my = 0;
-				if (t < T - 1) {
-					mx = kpXY[t + 1][j][0] - x;
-					my = kpXY[t + 1][j][1] - y;
-				}
-
-				flatPerView[idx++] = x;
-				flatPerView[idx++] = y;
-				flatPerView[idx++] = bx;
-				flatPerView[idx++] = by;
-				flatPerView[idx++] = mx;
-				flatPerView[idx++] = my;
+			let mx = 0;
+			let my = 0;
+			if (t < T - 1) {
+				mx = kpXY[t + 1][j][0] - x;
+				my = kpXY[t + 1][j][1] - y;
 			}
+
+			flat[idx++] = x;
+			flat[idx++] = y;
+			flat[idx++] = bx;
+			flat[idx++] = by;
+			flat[idx++] = mx;
+			flat[idx++] = my;
 		}
 	}
 
-	if (numViews === 1) {
-		return flatPerView;
+	return flat;
+}
+
+function startDetectionLoop() {
+	const processFrame = async () => {
+		if (
+			videoElement &&
+			poseLandmarker &&
+			handLandmarker &&
+			videoElement.readyState >= 2 &&
+			!videoElement.paused
+		) {
+			try {
+				let timestamp: number;
+
+				if (appState.input === 'camera') {
+					timestamp = performance.now();
+					if (timestamp <= lastMediaPipeTimestamp) timestamp = lastMediaPipeTimestamp + 16;
+					lastMediaPipeTimestamp = timestamp;
+				} else {
+					timestamp = getMonotonicTimestamp(videoElement.currentTime);
+				}
+
+				const poseRes = poseLandmarker.detectForVideo(videoElement, timestamp);
+				const handRes = handLandmarker.detectForVideo(videoElement, timestamp);
+
+				// Canvas init & rendering
+				if (!canvasCtx && canvasElement) {
+					canvasCtx = canvasElement.getContext('2d');
+					if (canvasCtx) drawingUtils = new DrawingUtils(canvasCtx);
+				}
+
+				if (canvasElement && videoElement && canvasCtx && drawingUtils) {
+					if (
+						canvasElement.width !== videoElement.videoWidth &&
+						videoElement.videoWidth > 0
+					) {
+						canvasElement.width = videoElement.videoWidth;
+						canvasElement.height = videoElement.videoHeight;
+					}
+
+					canvasCtx.save();
+					canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+					// Draw pose skeleton
+					if (poseRes.landmarks) {
+						for (const landmark of poseRes.landmarks) {
+							drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
+							drawingUtils.drawLandmarks(landmark, { radius: 3, color: '#FF0000' });
+						}
+					}
+
+					// Draw hands skeleton
+					if (handRes.landmarks) {
+						for (const landmarks of handRes.landmarks) {
+							drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#00FFFF', lineWidth: 2 });
+							drawingUtils.drawLandmarks(landmarks, { radius: 2, color: '#0000FF' });
+						}
+					}
+
+					canvasCtx.restore();
+				}
+
+				// Extract keypoints when recording
+				if (appState.isDetecting) {
+					// 33 Pose keypoints
+					let posePoints: number[][];
+					if (poseRes.landmarks && poseRes.landmarks.length > 0) {
+						posePoints = poseRes.landmarks[0]
+							.slice(0, POSE_KEEP)
+							.map((pt) => [pt.x, pt.y]);
+					} else {
+						posePoints = Array.from({ length: POSE_KEEP }, () => [0, 0]);
+					}
+
+					// 21 Left + 21 Right Hand keypoints
+					let leftHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
+					let rightHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
+
+					if (handRes.landmarks && handRes.handedness) {
+						for (let h = 0; h < handRes.handedness.length; h++) {
+							const label = handRes.handedness[h][0]?.categoryName;
+							const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y]);
+							if (label === 'Left') leftHandPoints = pts;
+							else if (label === 'Right') rightHandPoints = pts;
+						}
+					}
+
+					const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints]; // [75][2]
+					rawFrameBuffer.push(currentFrame);
+
+					if (rawFrameBuffer.length >= TARGET_FRAMES) {
+						await toggleDetection();
+					}
+				}
+			} catch (err) {
+				console.error('Error during frame detection:', err);
+			}
+		}
+
+		animFrameId = requestAnimationFrame(processFrame);
+	};
+
+	processFrame();
+}
+
+function softmax(logits: Float32Array): number[] {
+	let maxVal = -Infinity;
+	for (let i = 0; i < logits.length; i++) if (logits[i] > maxVal) maxVal = logits[i];
+
+	const exps = new Float64Array(logits.length);
+	let sumExps = 0;
+	for (let i = 0; i < logits.length; i++) {
+		const expVal = Math.exp(logits[i] - maxVal);
+		exps[i] = expVal;
+		sumExps += expVal;
 	}
 
-	
-	const flatMultiView = new Float32Array(numViews * flatPerView.length);
-	for (let v = 0; v < numViews; v++) {
-		flatMultiView.set(flatPerView, v * flatPerView.length);
-	}
-	return flatMultiView;
+	const probs = new Array(logits.length);
+	for (let i = 0; i < logits.length; i++) probs[i] = exps[i] / sumExps;
+	return probs;
 }
+
+function getTopKPredictions(logits: Float32Array, labelsList: string[], k: number = 5) {
+	const probabilities = softmax(logits);
+
+	const rankedList = probabilities.map((prob, index) => ({
+		label: labelsList[index] ?? `Class ${index}`,
+		confidence: prob,
+		percentage: (prob * 100).toFixed(1) + '%'
+	}));
+
+	rankedList.sort((a, b) => b.confidence - a.confidence);
+	return rankedList.slice(0, k);
+}
+
+
+async function runInferenceForWindow() {
+	if (!session || rawFrameBuffer.length < 10) {
+		appState.prediction = 'Sequence too short';
+		return;
+	}
+
+	appState.isLoading = true;
+	try {
+		const kpXY = preprocessKeypoints(rawFrameBuffer, TARGET_FRAMES);
+		const tensorData = buildTensorData(kpXY);
+		const inputTensor = new ort.Tensor('float32', tensorData, [1, TARGET_FRAMES, NUM_JOINTS, NUM_CHANNELS]);
+
+		const inputName = session.inputNames?.[0] ?? 'input';
+		const outputName = session.outputNames?.[0] ?? 'output';
+
+		const outputs = await session.run({ [inputName]: inputTensor });
+		const outputData = outputs[outputName].data as Float32Array;
+
+		if (labels.length && labels.length !== NUM_CLASSES) {
+			console.warn(`labels.json has ${labels.length} entries, model expects ${NUM_CLASSES}.`);
+		}
+
+		const topPredictions = getTopKPredictions(outputData, labels, 5);
+		appState.topPredictions = topPredictions;
+		appState.prediction = topPredictions[0]?.label ?? 'Unknown';
+	} catch (err) {
+		console.error('Inference error:', err);
+		appState.prediction = 'Error analyzing sign';
+	} finally {
+		appState.isLoading = false;
+	}
+}
+
 
 onMount(async () => {
 	try {
@@ -367,306 +526,38 @@ function handleVideoEnded() {
 	}
 }
 
-function startDetectionLoop() {
-	const processFrame = async () => {
-		if (
-			videoElement &&
-			poseLandmarker &&
-			handLandmarker &&
-			videoElement.readyState >= 2 &&
-			!videoElement.paused
-		) {
-			try {
-				let timestamp: number;
-
-				if (appState.input === 'camera') {
-					timestamp = performance.now();
-					if (timestamp <= lastMediaPipeTimestamp) timestamp = lastMediaPipeTimestamp + 16;
-					lastMediaPipeTimestamp = timestamp;
-				} else {
-					timestamp = getMonotonicTimestamp(videoElement.currentTime);
-				}
-
-				const poseRes = poseLandmarker.detectForVideo(videoElement, timestamp);
-				const handRes = handLandmarker.detectForVideo(videoElement, timestamp);
-
-				// Canvas init & rendering
-				if (!canvasCtx && canvasElement) {
-					canvasCtx = canvasElement.getContext('2d');
-					if (canvasCtx) drawingUtils = new DrawingUtils(canvasCtx);
-				}
-
-				if (canvasElement && videoElement && canvasCtx && drawingUtils) {
-					if (
-						canvasElement.width !== videoElement.videoWidth &&
-						videoElement.videoWidth > 0
-					) {
-						canvasElement.width = videoElement.videoWidth;
-						canvasElement.height = videoElement.videoHeight;
-					}
-
-					canvasCtx.save();
-					canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-					// Draw pose skeleton
-					if (poseRes.landmarks) {
-						for (const landmark of poseRes.landmarks) {
-							drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
-							drawingUtils.drawLandmarks(landmark, { radius: 3, color: '#FF0000' });
-						}
-					}
-
-					// Draw hands skeleton
-					if (handRes.landmarks) {
-						for (const landmarks of handRes.landmarks) {
-							drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#00FFFF', lineWidth: 2 });
-							drawingUtils.drawLandmarks(landmarks, { radius: 2, color: '#0000FF' });
-						}
-					}
-
-					canvasCtx.restore();
-				}
-
-				// Extract keypoints when recording
-				if (appState.isDetecting) {
-					// 33 Pose keypoints
-					let posePoints: number[][];
-					if (poseRes.landmarks && poseRes.landmarks.length > 0) {
-						posePoints = poseRes.landmarks[0]
-							.slice(0, POSE_KEEP)
-							.map((pt) => [pt.x, pt.y]);
-					} else {
-						posePoints = Array.from({ length: POSE_KEEP }, () => [0, 0]);
-					}
-
-					// 21 Left + 21 Right Hand keypoints
-					let leftHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
-					let rightHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
-
-					if (handRes.landmarks && handRes.handedness) {
-						for (let h = 0; h < handRes.handedness.length; h++) {
-							const label = handRes.handedness[h][0]?.categoryName;
-							const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y]);
-							if (label === 'Left') leftHandPoints = pts;
-							else if (label === 'Right') rightHandPoints = pts;
-						}
-					}
-
-					const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints]; // [75][2]
-					rawFrameBuffer.push(currentFrame);
-
-					if (rawFrameBuffer.length >= TARGET_FRAMES) {
-						await toggleDetection();
-					}
-				}
-			} catch (err) {
-				console.error('Error during frame detection:', err);
-			}
-		}
-
-		animFrameId = requestAnimationFrame(processFrame);
-	};
-
-	processFrame();
-}
-
-function softmax(logits: Float32Array): number[] {
-	let maxVal = -Infinity;
-	for (let i = 0; i < logits.length; i++) if (logits[i] > maxVal) maxVal = logits[i];
-
-	const exps = new Float64Array(logits.length);
-	let sumExps = 0;
-	for (let i = 0; i < logits.length; i++) {
-		const expVal = Math.exp(logits[i] - maxVal);
-		exps[i] = expVal;
-		sumExps += expVal;
-	}
-
-	const probs = new Array(logits.length);
-	for (let i = 0; i < logits.length; i++) probs[i] = exps[i] / sumExps;
-	return probs;
-}
-
-function getTopKPredictions(logits: Float32Array, labelsList: string[], k: number = 5) {
-	const probabilities = softmax(logits);
-
-	const rankedList = probabilities.map((prob, index) => ({
-		label: labelsList[index] ?? `Class ${index}`,
-		confidence: prob,
-		percentage: (prob * 100).toFixed(1) + '%'
-	}));
-
-	rankedList.sort((a, b) => b.confidence - a.confidence);
-	return rankedList.slice(0, k);
-}
-
-function formatTensorShape(dims: readonly (string | number)[] | undefined): string {
-	if (!dims || dims.length === 0) return 'unknown';
-	return `[${dims.map((d) => (typeof d === 'number' ? d : String(d))).join(', ')}]`;
-}
-
-function isDimCompatible(actual: string | number | undefined, expected: number): boolean {
-	if (actual === undefined) return false;
-	if (typeof actual === 'string') return true;
-	if (actual === -1) return true;
-	return actual === expected;
-}
-
-interface ModelInputConfig {
-	numChannels: number;
-	numViews: number;
-	shape: number[];
-}
-
-function getModelInputConfig(sess: ort.InferenceSession): { ok: boolean; message: string; config?: ModelInputConfig } {
-	const inputName = sess.inputNames?.[0];
-	if (!inputName) {
-		return { ok: false, message: 'Model has no input tensor.' };
-	}
-
-	const anySess = sess as any;
-	let meta: { name?: string; shape?: (number | string)[]; dimensions?: (number | string)[]; type?: string } | undefined;
-
-	if (Array.isArray(anySess.inputMetadata)) {
-		meta = anySess.inputMetadata.find((m: any) => m?.name === inputName) ?? anySess.inputMetadata[0];
-	} else if (anySess.inputMetadata && typeof anySess.inputMetadata === 'object') {
-		meta = anySess.inputMetadata[inputName] ?? Object.values(anySess.inputMetadata)[0];
-	}
-
-	const actualDims = meta?.shape ?? meta?.dimensions;
-	const actualType = meta?.type ?? 'unknown';
-
-	if (!actualDims || actualDims.length === 0) {
-		console.warn(`Could not determine dimensions for "${inputName}", defaulting to multi-view 6-channel input [1, 3, 60, 450].`);
-		return {
-			ok: true,
-			message: `Defaulting to [1, 3, ${TARGET_FRAMES}, 450] (6-channel, 3-view).`,
-			config: { numChannels: 6, numViews: 3, shape: [1, 3, TARGET_FRAMES, 450] }
-		};
-	}
-
-	// 5D Tensor Shape: SPOTERChung multi-view unflattened [1, 3, 60, 75, C]
-	if (actualDims.length === 5) {
-		const vOk = isDimCompatible(actualDims[1], 3);
-		const tOk = isDimCompatible(actualDims[2], TARGET_FRAMES);
-		const kOk = isDimCompatible(actualDims[3], NUM_JOINTS);
-		const channels = isDimCompatible(actualDims[4], 6) ? 6 : 2;
-		const cOk = isDimCompatible(actualDims[4], channels);
-
-		if (vOk && tOk && kOk && cOk) {
-			return {
-				ok: true,
-				message: `Model input OK: "${inputName}" ${formatTensorShape(actualDims)} (${channels}-channel, 3-view).`,
-				config: { numChannels: channels, numViews: 3, shape: [1, 3, TARGET_FRAMES, NUM_JOINTS, channels] }
-			};
-		}
-	}
-
-	// 4D Tensor Shape:
-	if (actualDims.length === 4) {
-		// Case A: Multi-view with flattened joint features [Batch, Views=3, Frames, Features (450 or 150)]
-		// e.g. ['batch_size', 3, 'num_frames', 450] as exported from best.pt
-		const isMultiViewFlattened = isDimCompatible(actualDims[1], 3) &&
-			(isDimCompatible(actualDims[3], 450) || isDimCompatible(actualDims[3], 150));
-
-		if (isMultiViewFlattened) {
-			const channels = isDimCompatible(actualDims[3], 450) ? 6 : 2;
-			return {
-				ok: true,
-				message: `Model input OK: "${inputName}" ${formatTensorShape(actualDims)} (${channels}-channel, 3-view, flattened features).`,
-				config: { numChannels: channels, numViews: 3, shape: [1, 3, TARGET_FRAMES, NUM_JOINTS * channels] }
-			};
-		}
-
-		// Case B: Single-view with unflattened keypoints [Batch, Frames=60, Joints=75, Channels=2 or 6]
-		const tOk = isDimCompatible(actualDims[1], TARGET_FRAMES);
-		const kOk = isDimCompatible(actualDims[2], NUM_JOINTS);
-		const channels = isDimCompatible(actualDims[3], 6) ? 6 : 2;
-		const cOk = isDimCompatible(actualDims[3], channels);
-
-		if (tOk && kOk && cOk) {
-			return {
-				ok: true,
-				message: `Model input OK: "${inputName}" ${formatTensorShape(actualDims)} (${channels}-channel, 1-view).`,
-				config: { numChannels: channels, numViews: 1, shape: [1, TARGET_FRAMES, NUM_JOINTS, channels] }
-			};
-		}
-	}
-
-	return {
-		ok: false,
-		message: `Input shape mismatch for "${inputName}". Expected [1, 3, 60, 450], [1, 60, 75, 2/6], or [1, 3, 60, 75, 2/6], but model has ${formatTensorShape(actualDims)} (type: ${actualType}).`
-	};
-}
-
-async function runInferenceForWindow() {
-	if (!session || rawFrameBuffer.length < 10) {
-		appState.prediction = 'Sequence too short';
-		return;
-	}
-
-	appState.isLoading = true;
-	try {
-		const check = getModelInputConfig(session);
-		if (!check.ok || !check.config) {
-			console.error(check.message);
-			appState.prediction = 'Incompatible model shape';
-			return;
-		}
-
-		const { numChannels, numViews, shape } = check.config;
-		const kpXY = preprocessKeypoints(rawFrameBuffer, TARGET_FRAMES);
-		const tensorData = buildTensorData(kpXY, numChannels, numViews);
-		const inputTensor = new ort.Tensor('float32', tensorData, shape);
-
-		const inputName = session.inputNames?.[0] ?? 'input';
-		const outputName = session.outputNames?.[0] ?? 'output';
-
-		const outputs = await session.run({ [inputName]: inputTensor });
-		const outputData = outputs[outputName].data as Float32Array;
-
-		const topPredictions = getTopKPredictions(outputData, labels, 5);
-		appState.topPredictions = topPredictions;
-		appState.prediction = topPredictions[0]?.label ?? 'Unknown';
-	} catch (err) {
-		console.error('Inference error:', err);
-		appState.prediction = 'Error analyzing sign';
-	} finally {
-		appState.isLoading = false;
-	}
-}
 
 // Default model and labels
 async function loadBundledModel(modelPath = '/spoter.onnx') {
 	appState.isLoading = true;
 	try {
 		await disposeSession();
+
 		const candidates = [modelPath, '/models/spoter.onnx'];
 		let createdSession: ort.InferenceSession | null = null;
-		let loadedPath = modelPath;
+		let lastError: unknown = null;
 
 		for (const candidate of candidates) {
 			try {
 				createdSession = await ort.InferenceSession.create(candidate, {
-					executionProviders: ['webgpu', 'wasm']
+					executionProviders: ['wasm']
 				});
-				loadedPath = candidate;
+				console.log(`Loaded ONNX model from: ${candidate}`);
 				break;
-			} catch {
-				// try next candidate
+			} catch (e) {
+				lastError = e;
+				console.warn(`Failed loading candidate: ${candidate}`, e);
 			}
 		}
 
 		if (!createdSession) {
-			throw new Error(`Failed to load ONNX model from ${candidates.join(' or ')}`);
+			throw new Error(
+				`Failed to load ONNX model from ${candidates.join(' or ')}. Last error: ${String(lastError)}`
+			);
 		}
 
 		session = createdSession;
-		const check = getModelInputConfig(session);
-		if (!check.ok) throw new Error(check.message);
-
-		appState.modelName = `Bundled: ${loadedPath}`;
-		console.log(check.message);
+		appState.modelName = `Bundled: ${modelPath}`;
 	} catch (err) {
 		console.warn('Bundled model notification:', err);
 		appState.modelName = 'No model loaded (Upload custom .onnx model)';
@@ -709,20 +600,7 @@ async function handleModelUpload(event: Event) {
 			executionProviders: ['webgpu', 'wasm']
 		});
 
-		const check = getModelInputConfig(session);
-		if (!check.ok) {
-			console.error(check.message);
-			alert(
-				`Loaded model "${file.name}" but it is not compatible.\n\n${check.message}\n\n` +
-				`Tip: export SPOTER model ONNX with input shape [1, 60, 75, 2], [1, 60, 75, 6], [1, 3, 60, 75, 2], or [1, 3, 60, 75, 6]`
-			);
-			await disposeSession();
-			appState.modelName = 'No model loaded';
-			return;
-		}
-
-		console.log(check.message);
-		appState.modelName = file.name;
+		
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
 		alert(`Failed to load ONNX model: ${errorMessage}`);
@@ -754,12 +632,11 @@ async function handleLabelsUpload(event: Event) {
 }
 </script>
 
-<main>
+<main data-webtui-theme="dark">
 <h1>Sign Language Detection (FOR TESTING, NOT FINAL PRODUCT)</h1>
 
-<div class="grid">
 
-<div class="column left-col">
+<!-- <div class="column left-col">
 	<div class="window">
 	<div class="title-bar">
 		<div class="title-bar-text">Model Selection</div>
@@ -797,100 +674,79 @@ async function handleLabelsUpload(event: Event) {
 	</p>
   </div>
 </div>
-</div>
-<div class="column center-col">
-<div class="window active">
-	<div class="title-bar">
-		<div class="title-bar-text">Input Selection</div>
-		<div class="title-bar-controls">
-		<button aria-label="Minimize"></button>
-		<button aria-label="Maximize"></button>
-		<button aria-label="Close"></button>
-		</div>
-	</div>
-	<div class="window-body has-space">
-		<div class="toggle-group">
-		<button 
-			class="toggle-btn" 
-			class:active={appState.input === 'camera'} 
-			onclick={() => handleModeChange('camera')}
-		>
-			Camera
-		</button>
-		<button 
-			class="toggle-btn" 
-			class:active={appState.input === 'video'} 
-			onclick={() => handleModeChange('video')}
-		>
-			Video file (.mp4, .webm)
-		</button>
-		</div>
+</div> -->
+<div class="grid" >
 
-		{#if appState.input === 'video'}
-		<div class="field">
-			<label for="video-input" ><strong>Upload Video File (.mp4, .webm):</strong></label>
-			<input 
-				id="video-input" 
-				type="file" 
-				accept="video/*" 
-				onchange={handleVideoUpload} 
-			/>
-			<p class="status">Selected Video: <strong>{appState.videoFile}</strong></p>
-		</div>
-		{/if}
-		<div class="video-container">
-			<video 
-				bind:this={videoElement}  
-				playsinline 
-				muted
-				controls={appState.input === 'video'}
-				class:mirrored={appState.input === 'camera'}
-				onended={handleVideoEnded}
-			></video>
-			
-			<canvas 
-			bind:this={canvasElement} 
-			class="canvas-overlay" 
+	<div class="big-one" box-="round">
+	<div class="toggle-group">
+	<button 
+		class="toggle-btn" 
+		class:active={appState.input === 'camera'} 
+		onclick={() => handleModeChange('camera')}
+	>
+		Camera
+	</button>
+	<button 
+		class="toggle-btn" 
+		class:active={appState.input === 'video'} 
+		onclick={() => handleModeChange('video')}
+	>
+		Video file (.mp4, .webm)
+	</button>
+	</div>
+
+	{#if appState.input === 'video'}
+	<div class="field">
+		<label for="video-input" ><strong>Upload Video File (.mp4, .webm):</strong></label>
+		<input 
+			id="video-input" 
+			type="file" 
+			accept="video/*" 
+			onchange={handleVideoUpload} 
+		/>
+		<p class="status">Selected Video: <strong>{appState.videoFile}</strong></p>
+	</div>
+	{/if}
+	<div class="video-container">
+		<video 
+			bind:this={videoElement}  
+			playsinline 
+			muted
+			controls={appState.input === 'video'}
 			class:mirrored={appState.input === 'camera'}
-			></canvas>
+			onended={handleVideoEnded}
+		></video>
+		
+		<canvas 
+		bind:this={canvasElement} 
+		class="canvas-overlay" 
+		class:mirrored={appState.input === 'camera'}
+		></canvas>
 
-			<div class="status-indicator" class:active={appState.isDetecting}>
-				<span class="status-dot"></span>
-				<span class="status-text">{appState.isDetecting ? 'DETECTING' : 'IDLE'}</span>
-			</div>
-
+		<div class="status-indicator" class:active={appState.isDetecting}>
+			<span class="status-dot"></span>
+			<span class="status-text">{appState.isDetecting ? 'DETECTING' : 'IDLE'}</span>
 		</div>
 
-		<div class="controls-row">
-        <div class="detected-box">
-          Detected Sign: <strong>{appState.prediction}</strong>
-        </div>
-        <button 
-          type="button" 
-          class="toggle-btn detection-btn" 
-          class:active={appState.isDetecting} 
-          onclick={toggleDetection}
-        >
-          {appState.isDetecting ? 'Stop Detection' : 'Start Detection'}
-        </button>
-      </div>
+	</div>
+
+	<div class="controls-row">
+	<div class="detected-box">
+		Detected Sign: <strong>{appState.prediction}</strong>
+	</div>
+	<button 
+		type="button" 
+		class="toggle-btn detection-btn" 
+		class:active={appState.isDetecting} 
+		onclick={toggleDetection}
+	>
+		{appState.isDetecting ? 'Stop Detection' : 'Start Detection'}
+	</button>
 	</div>
 	</div>
 
-</div>
-	
-<div class="column right-col">
-<div class="window active">
-  <div class="title-bar">
-    <div class="title-bar-text">Predictions Rankings</div>
-    <div class="title-bar-controls">
-      <button aria-label="Minimize"></button>
-      <button aria-label="Maximize"></button>
-      <button aria-label="Close"></button>
-    </div>
-  </div>
-  <div class="window-body has-space">
-    <h2>Top Predictions</h2>
+	<div class="small-one" box-="round">
+		<h2>Top Predictions</h2>
 
 	{#if appState.topPredictions.length === 0}
 		<p>Waiting for frames...</p>
@@ -919,16 +775,19 @@ async function handleLabelsUpload(event: Event) {
 		
 		
 	{/if}
-  </div>
-</div>
+	</div>
 
 </div>
+	
 
-</div>
+
+
 
 </main>
 
 <style>
+@import '@webtui/css';
+@import '@webtui/theme-catppuccin';
 
 
 main {
@@ -944,17 +803,11 @@ main {
 
 .grid {
 	display: grid;
-	grid-template-columns: 1fr 2fr 1fr;
+	grid-template-columns: 2fr 1fr;
 	gap: 20px;
 	align-items: start;
 }
 
-.column {
-	display: flex;
-	flex-direction: column;
-	gap: 20px;
-	min-width: 0;
-}
 
 .toggle-group {
 	display: flex;
@@ -966,13 +819,12 @@ main {
 	padding: 10px;
 	font-size: 1em;
 	border: 1px solid #ccc;
-	background: #e0e0e0;
+	background: #999;
 	cursor: pointer;
-	border-radius: 6px;
 	transition: all 0.2s ease;
 }
 .toggle-btn.active {
-	background: #0070f3;
+	background: #ddd;
 	color: black;
 	border-color: #0050b3;
 	font-weight: bold;
