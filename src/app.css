@@ -1,0 +1,7 @@
+@import '@webtui/css';
+@import '@webtui/theme-catppuccin';
+
+html, body {
+	background-color: var(--background0);
+	color: var(--foreground1);
+}

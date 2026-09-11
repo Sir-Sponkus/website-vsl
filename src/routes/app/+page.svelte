@@ -7,7 +7,7 @@ import {
   FilesetResolver,
   DrawingUtils
 } from '@mediapipe/tasks-vision';
-import '@webtui/css'
+import {goto} from '$app/navigation';
 
 
 const TARGET_FRAMES = 60;
@@ -24,13 +24,14 @@ interface PredictionItem {
 }
 
 const appState = $state({
-  input: 'camera', // 'camera' or 'video'
-  modelName: 'No model loaded',
-  prediction: '—',
-  topPredictions: [] as PredictionItem[],
-  isLoading: false,
-  videoFile: 'No video selected',
-  isDetecting: false
+	input: 'camera', // 'camera' or 'video'
+	modelName: 'No model loaded',
+	prediction: '—',
+	topPredictions: [] as PredictionItem[],
+	isLoading: false,
+	videoFile: 'No video selected',
+	isDetecting: false,
+	countdown: 0
 });
 
 let videoElement: HTMLVideoElement | null = null;
@@ -46,9 +47,18 @@ let canvasCtx: CanvasRenderingContext2D | null = null;
 let drawingUtils: DrawingUtils | null = null;
 let labels = $state<string[]>([]);
 let labelStatus = $state<string>('No labels loaded (using class numbers)');
+const CAPTURE_INTERVAL_MS = 1000 / 30;
+const MAX_RECORD_DURATION_MS = 10000;
+let lastCaptureTime = 0;
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+let recordingStartTime = 0;
 
 let timestampOffset = 0;
 let lastMediaPipeTimestamp = 0;
+
+function goHome() {
+	goto('/');
+}
 
 
 const CHA_XUONG_75: number[] = (() => {
@@ -79,26 +89,89 @@ const CHA_XUONG_75: number[] = (() => {
 })();
 
 async function toggleDetection() {
-	if (!appState.isDetecting) {
-		rawFrameBuffer.length = 0;
-		appState.isDetecting = true;
-		appState.prediction = 'Recording gesture...';
-		appState.topPredictions = [];
-
-		if (appState.input === 'video' && videoElement) {
-			await videoElement.play();
-		}
-	} else {
+	// Currently recording -> stop and analyze
+	if (appState.isDetecting) {
 		appState.isDetecting = false;
-
 		if (appState.input === 'video' && videoElement) {
 			videoElement.pause();
 		}
-
 		appState.prediction = 'Analyzing sign...';
 		await runInferenceForWindow();
 		rawFrameBuffer.length = 0;
+		return;
 	}
+
+
+	if (appState.countdown > 0) {
+		cancelCountdown();
+		return;
+	}
+
+
+	if (appState.input === 'camera') {
+		startCountdown();
+	} else {
+		beginRecording();
+		if (videoElement) await videoElement.play();
+	}
+}
+
+function startCountdown() {
+	appState.countdown = 3;
+	appState.prediction = `Starting in ${appState.countdown}...`;
+
+	countdownTimer = setInterval(() => {
+		appState.countdown -= 1;
+		if (appState.countdown <= 0) {
+			clearInterval(countdownTimer!);
+			countdownTimer = null;
+			appState.countdown = 0;
+			beginRecording();
+		} else {
+			appState.prediction = `Starting in ${appState.countdown}...`;
+		}
+	}, 1000);
+}
+
+function cancelCountdown() {
+	if (countdownTimer) {
+		clearInterval(countdownTimer);
+		countdownTimer = null;
+	}
+	appState.countdown = 0;
+	appState.prediction = '—';
+}
+
+function beginRecording() {
+	rawFrameBuffer.length = 0;
+	lastCaptureTime = 0;
+	recordingStartTime = performance.now();
+	appState.isDetecting = true;
+	appState.prediction = 'Recording gesture...';
+	appState.topPredictions = [];
+}
+
+function drawOverlayText(
+	ctx: CanvasRenderingContext2D,
+	canvas: HTMLCanvasElement,
+	text: string,
+	x: number,
+	y: number,
+	opts: { font?: string; color?: string; align?: CanvasTextAlign; baseline?: CanvasTextBaseline } = {}
+){
+	ctx.save();
+	ctx.font = opts.font ?? '20px monospace';
+	ctx.fillStyle = opts.color ?? '#ffffff';
+	ctx.textAlign = opts.align ?? 'left';
+	ctx.textBaseline = opts.baseline ?? 'top';
+
+	if (appState.input === 'camera') {
+		ctx.translate(canvas.width, 0);
+		ctx.scale(-1, 1);
+	}
+
+	ctx.fillText(text, x, y);
+	ctx.restore();
 }
 
 function getMonotonicTimestamp(videoCurrentTimeSec: number): number {
@@ -273,38 +346,65 @@ function startDetectionLoop() {
 					}
 
 					canvasCtx.restore();
+					if (appState.countdown > 0 && canvasElement) {
+						drawOverlayText(
+							canvasCtx,
+							canvasElement,
+							String(appState.countdown),
+							canvasElement.width / 2,
+							canvasElement.height / 2,
+							{ font: 'bold 96px monospace', color: '#ffffff', align: 'center', baseline: 'middle' }
+						);
+					}
+					if (appState.isDetecting && canvasElement) {
+						const elapsed = performance.now() - recordingStartTime;
+						const remainingSec = Math.max(0, Math.ceil((MAX_RECORD_DURATION_MS - elapsed) / 1000));
+						drawOverlayText(
+							canvasCtx,
+							canvasElement,
+							`REC ${remainingSec}s`,
+							16,
+							16,
+							{ font: 'bold 20px monospace', color: '#ff4444' }
+						);
+
+						if (elapsed >= MAX_RECORD_DURATION_MS) {
+							await toggleDetection(); // stops + runs inference, same as pressing Stop
+						}
+					}
 				}
 
 				// Extract keypoints when recording
 				if (appState.isDetecting) {
-					// 33 Pose keypoints
-					let posePoints: number[][];
-					if (poseRes.landmarks && poseRes.landmarks.length > 0) {
-						posePoints = poseRes.landmarks[0]
-							.slice(0, POSE_KEEP)
-							.map((pt) => [pt.x, pt.y]);
-					} else {
-						posePoints = Array.from({ length: POSE_KEEP }, () => [0, 0]);
-					}
+					const now = performance.now();
+					if (now - lastCaptureTime >= CAPTURE_INTERVAL_MS) {
+						lastCaptureTime = now;
 
-					// 21 Left + 21 Right Hand keypoints
-					let leftHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
-					let rightHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
-
-					if (handRes.landmarks && handRes.handedness) {
-						for (let h = 0; h < handRes.handedness.length; h++) {
-							const label = handRes.handedness[h][0]?.categoryName;
-							const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y]);
-							if (label === 'Left') leftHandPoints = pts;
-							else if (label === 'Right') rightHandPoints = pts;
+						// 33 Pose keypoints
+						let posePoints: number[][];
+						if (poseRes.landmarks && poseRes.landmarks.length > 0) {
+							posePoints = poseRes.landmarks[0]
+								.slice(0, POSE_KEEP)
+								.map((pt) => [pt.x, pt.y]);
+						} else {
+							posePoints = Array.from({ length: POSE_KEEP }, () => [0, 0]);
 						}
-					}
 
-					const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints]; // [75][2]
-					rawFrameBuffer.push(currentFrame);
+						// 21 Left + 21 Right Hand keypoints
+						let leftHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
+						let rightHandPoints: number[][] = Array.from({ length: HAND_JOINTS }, () => [0, 0]);
 
-					if (rawFrameBuffer.length >= TARGET_FRAMES) {
-						await toggleDetection();
+						if (handRes.landmarks && handRes.handedness) {
+							for (let h = 0; h < handRes.handedness.length; h++) {
+								const label = handRes.handedness[h][0]?.categoryName;
+								const pts = handRes.landmarks[h].map((pt) => [pt.x, pt.y]);
+								if (label === 'Left') leftHandPoints = pts;
+								else if (label === 'Right') rightHandPoints = pts;
+							}
+						}
+
+						const currentFrame = [...posePoints, ...leftHandPoints, ...rightHandPoints];
+						rawFrameBuffer.push(currentFrame);
 					}
 				}
 			} catch (err) {
@@ -431,6 +531,7 @@ async function disposeSession() {
 
 onDestroy(() => {
 	if (animFrameId) cancelAnimationFrame(animFrameId);
+	if (countdownTimer) clearInterval(countdownTimer);
 	disposeSession().catch((err) => console.error('Session dispose error:', err));
 	stopCamera();
 	revokeVideoUrl();
@@ -632,52 +733,19 @@ async function handleLabelsUpload(event: Event) {
 }
 </script>
 
-<main data-webtui-theme="dark">
+
+<main>
 <h1>Sign Language Detection (FOR TESTING, NOT FINAL PRODUCT)</h1>
 
 
-<!-- <div class="column left-col">
-	<div class="window">
-	<div class="title-bar">
-		<div class="title-bar-text">Model Selection</div>
+
+<div class="grid">
+
+	<div class="big-one" box-="round" shear-="top">
+	<div class="header">
+		<span is-="badge" variant-="mauve">Input</span>
 	</div>
-	<div class="window-body has-space">
-		<label for="model-input"><strong>Select ONNX Model File (.onnx):</strong></label>
-		<input 
-			id="model-input"
-			type="file" 
-			accept=".onnx" 
-			onchange={handleModelUpload}
-			disabled={appState.isLoading} 
-		/>
-		<p class="status">
-			Model Status: <strong>{appState.isLoading ? 'Loading model into memory...' : appState.modelName}</strong>
-		</p>
-	</div>
-</div>
-
-
-<div class="window">
-  	<div class="title-bar">
-    	<div class="title-bar-text">Label Selection</div>
-  	</div>
-  	<div class="window-body has-space">
-    <label for="label-input"><strong>Upload Labels File (.json):</strong></label>
-	<input 
-		id="label-input"
-		type="file" 
-		accept=".json" 
-		onchange={handleLabelsUpload} 
-	/>
-	<p class="status">
-		Label Status: <strong>{labelStatus}</strong>
-	</p>
-  </div>
-</div>
-</div> -->
-<div class="grid" >
-
-	<div class="big-one" box-="round">
+	<div class="box-content">
 	<div class="toggle-group">
 	<button 
 		class="toggle-btn" 
@@ -694,8 +762,9 @@ async function handleLabelsUpload(event: Event) {
 		Video file (.mp4, .webm)
 	</button>
 	</div>
-
+	<div is-="separator" variant-="mauve" direction-="horizontal"></div>
 	{#if appState.input === 'video'}
+	
 	<div class="field">
 		<label for="video-input" ><strong>Upload Video File (.mp4, .webm):</strong></label>
 		<input 
@@ -704,10 +773,12 @@ async function handleLabelsUpload(event: Event) {
 			accept="video/*" 
 			onchange={handleVideoUpload} 
 		/>
-		<p class="status">Selected Video: <strong>{appState.videoFile}</strong></p>
+		<p class="status">
+			Video Status: <strong>{appState.videoFile}</strong>
+		</p>
 	</div>
 	{/if}
-	<div class="video-container">
+	<div class="video-container" box-="round">
 		<video 
 			bind:this={videoElement}  
 			playsinline 
@@ -725,7 +796,6 @@ async function handleLabelsUpload(event: Event) {
 
 		<div class="status-indicator" class:active={appState.isDetecting}>
 			<span class="status-dot"></span>
-			<span class="status-text">{appState.isDetecting ? 'DETECTING' : 'IDLE'}</span>
 		</div>
 
 	</div>
@@ -744,14 +814,19 @@ async function handleLabelsUpload(event: Event) {
 	</button>
 	</div>
 	</div>
+	</div>
 
-	<div class="small-one" box-="round">
-		<h2>Top Predictions</h2>
+	<div class="small-one">
+	<div class="column predictions-column" box-="round" shear-="top">
+	<div class="header">
+		<span is-="badge" variant-="mauve">Top Predictions</span>
+	</div>
+	<div class="box-content">
 
 	{#if appState.topPredictions.length === 0}
 		<p>Waiting for frames...</p>
 	{:else}
-		<table class="has-shadow predictions-table">
+		<table class="has-shadow predictions-table" box-="round" divide-="both">
 		<thead>
 				<tr>
 					<th>Ranking</th>
@@ -775,8 +850,49 @@ async function handleLabelsUpload(event: Event) {
 		
 		
 	{/if}
+	
+
+	</div>
 	</div>
 
+	<div class="column" box-="round" shear-="top">
+	<div class="header">
+		<span is-="badge" variant-="mauve">Advanced</span>
+	</div>
+	<div class="box-content">
+
+	<label for="model-input"><strong>Select ONNX Model File (.onnx):</strong></label>
+	<input 
+		id="model-input"
+		type="file" 
+		accept=".onnx" 
+		onchange={handleModelUpload}
+		disabled={appState.isLoading} 
+	/>
+	<p class="status">
+		Model Status: <strong>{appState.isLoading ? 'Loading model into memory...' : appState.modelName}</strong>
+	</p>
+	<div is-="separator" variant-="mauve" direction-="horizontal"></div>
+	<label for="label-input"><strong>Upload Labels File (.json):</strong></label>
+	<input 
+		id="label-input"
+		type="file" 
+		accept=".json" 
+		onchange={handleLabelsUpload} 
+	/>
+	<p class="status">
+		Label Status: <strong>{labelStatus}</strong>
+	</p>
+
+	
+
+	</div>
+	</div>
+
+	<div class="column">
+		<button class="big-button" box-="round" size-="large" onclick={goHome}>Home</button>
+	</div>
+	</div>
 </div>
 	
 
@@ -786,26 +902,53 @@ async function handleLabelsUpload(event: Event) {
 </main>
 
 <style>
-@import '@webtui/css';
-@import '@webtui/theme-catppuccin';
-
 
 main {
 	padding: 20px;
-	font-family: sans-serif;
-	max-width: 1280px;
+	max-width: 90%;
 	margin: 0 auto;
+	border: none;
 }
 
-.window-body {
-	font-size: 1.5em;
+.big-button {
+	width: 100%;
+	box-sizing: border-box;
 }
 
 .grid {
 	display: grid;
 	grid-template-columns: 2fr 1fr;
 	gap: 20px;
-	align-items: start;
+	align-items: stretch;
+}
+
+.big-one,
+.small-one {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	box-sizing: border-box;
+}
+
+.big-one {
+	min-width: 1280px;
+}
+
+.predictions-column {
+	height: 30%;
+	flex-shrink: 0;
+}
+
+.predictions-column .box-content {
+	overflow-y: auto;
+}
+
+.box-content {
+	display: flex;
+	flex-direction: column;
+	padding: 10px;
+	gap: 10px;
+	flex: 1;
 }
 
 
@@ -816,33 +959,32 @@ main {
 }
 .toggle-btn {
 	flex: 1;
-	padding: 10px;
 	font-size: 1em;
-	border: 1px solid #ccc;
-	background: #999;
+	color: var(--foreground1);
+	background: var(--background3);
 	cursor: pointer;
 	transition: all 0.2s ease;
 }
 .toggle-btn.active {
-	background: #ddd;
-	color: black;
-	border-color: #0050b3;
+	background: var(--foreground1);
+	color: var(--background0);
 	font-weight: bold;
 }
 .field {
 	margin-top: 10px;
 	padding-top: 10px;
-	border-top: 1px dashed #ccc;
 }
+
+
+
 .status {
 	margin: 6px 0 0 0;
-	font-size: 0.88em;
-	color: #444;
 }
 .video-container {
 	position: relative;
 	width: 100%;
 	height: auto;
+	aspect-ratio: 16/9;
 	background-color: #000;
 	border-radius: 8px;
 	overflow: hidden;
@@ -861,7 +1003,7 @@ main {
 	top: 0;
 	left: 0;
 	width: 100%;
-	height: 100%;
+	height: auto;
 	pointer-events: none;	
 }
 
@@ -879,24 +1021,24 @@ video.mirrored, canvas.mirrored {
 	flex: 1;
 	padding: 10px;
 	font-size: 1em;
-	border: 1px solid #ccc;
-	background: #f8f9fa;
-	border-radius: 6px;
+	background: var(--foreground1);
+	color: var(--background0);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	box-sizing: border-box;
-	}
+}
 
 
 .detection-btn {
   	margin: 0;
+	background: var(--teal);
+	color: var(--background0);
 }
 
 .detection-btn.active {
-	background: #d9534f;
-	color: white;
-	border-color: #d43f3a;
+	background: var(--maroon);
+	color: var(--background0);
 }
 
 .canvas-overlay {
@@ -904,8 +1046,7 @@ video.mirrored, canvas.mirrored {
 }
 
 .predictions-table {
-	width: 100%;
-	border-collapse: collapse;
+	width: 90%;
 }
 
 @media (max-width: 900px) {
@@ -924,9 +1065,9 @@ video.mirrored, canvas.mirrored {
     gap: 8px;
     padding: 6px 12px;
     background: rgba(0, 0, 0, 0.7);
-    border: 1px solid #f44336;
+    border: 1px solid var(--red);
     border-radius: 20px;
-    color: #f44336;
+    color: var(--red);
     font-size: 0.8em;
     font-weight: bold;
     letter-spacing: 0.5px;
@@ -938,26 +1079,18 @@ video.mirrored, canvas.mirrored {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background-color: #f44336;
-    box-shadow: 0 0 6px #f44336;
-    transition: all 0.2s ease;
+    background-color: var(--red);
 }
 
 
 .status-indicator.active {
-    border-color: #4caf50;
-    color: #4caf50;
+    border-color: var(--teal);
+    color: var(--teal);
 }
 
 .status-indicator.active .status-dot {
-    background-color: #4caf50;
-    box-shadow: 0 0 8px #4caf50;
-    animation: pulse 1.5s infinite;
+    background-color: var(--teal);
 }
 
-@keyframes pulse {
-    0% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(0.85); }
-    100% { opacity: 1; transform: scale(1); }
-}
+
 </style>
