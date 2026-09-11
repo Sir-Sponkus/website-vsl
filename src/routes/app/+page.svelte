@@ -8,6 +8,7 @@ import {
   DrawingUtils
 } from '@mediapipe/tasks-vision';
 import {goto} from '$app/navigation';
+import {asset} from '$app/paths';
 
 
 const TARGET_FRAMES = 60;
@@ -629,12 +630,12 @@ function handleVideoEnded() {
 
 
 // Default model and labels
-async function loadBundledModel(modelPath = '/spoter.onnx') {
+async function loadBundledModel(modelPath = asset('/spoter/spoter.onnx')) {
 	appState.isLoading = true;
 	try {
 		await disposeSession();
 
-		const candidates = [modelPath, '/models/spoter.onnx'];
+		const candidates = [modelPath, asset('/spoter/spoter.onnx')];
 		let createdSession: ort.InferenceSession | null = null;
 		let lastError: unknown = null;
 
@@ -667,8 +668,8 @@ async function loadBundledModel(modelPath = '/spoter.onnx') {
 	}
 }
 
-async function loadBundledLabels(labelsPath = '/labels.json') {
-	const candidates = [labelsPath, '/models/labels.json'];
+async function loadBundledLabels(labelsPath = asset('/spoter/labels.json')) {
+	const candidates = [labelsPath, asset('/spoter/labels.json')];
 	for (const candidate of candidates) {
 		try {
 			const res = await fetch(candidate);
