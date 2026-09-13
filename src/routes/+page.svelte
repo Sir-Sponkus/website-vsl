@@ -1,13 +1,13 @@
 <script lang="ts">
 import {goto} from '$app/navigation';
-import {asset} from '$app/paths';
+import {resolve} from '$app/paths';
 
 function goTranslate() {
-	goto('/translate');
+	goto(resolve('/translate/'));
 }
 
 function goLearn() {
-	goto('/learn/');
+	goto(resolve('/learn/'));
 }
 </script>
 
