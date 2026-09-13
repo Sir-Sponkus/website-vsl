@@ -736,10 +736,6 @@ async function handleLabelsUpload(event: Event) {
 
 
 <main>
-<h1>Sign Language Detection (FOR TESTING, NOT FINAL PRODUCT)</h1>
-
-
-
 <div class="grid">
 
 	<div class="big-one" box-="round" shear-="top">
@@ -856,7 +852,7 @@ async function handleLabelsUpload(event: Event) {
 	</div>
 	</div>
 
-	<div class="column" box-="round" shear-="top">
+	<!-- <div class="column" box-="round" shear-="top">
 	<div class="header">
 		<span is-="badge" variant-="mauve">Advanced</span>
 	</div>
@@ -888,10 +884,10 @@ async function handleLabelsUpload(event: Event) {
 	
 
 	</div>
-	</div>
+	</div> -->
 
 	<div class="column">
-		<button class="big-button" box-="round" size-="large" onclick={goHome}>Home</button>
+		<button class="big-button home" box-="round" size-="large" onclick={goHome}>Home</button>
 	</div>
 	</div>
 </div>
@@ -904,12 +900,7 @@ async function handleLabelsUpload(event: Event) {
 
 <style>
 
-main {
-	padding: 20px;
-	max-width: 90%;
-	margin: 0 auto;
-	border: none;
-}
+
 
 .big-button {
 	width: 100%;
@@ -961,14 +952,14 @@ main {
 .toggle-btn {
 	flex: 1;
 	font-size: 1em;
-	color: var(--foreground1);
-	background: var(--background3);
-	cursor: pointer;
-	transition: all 0.2s ease;
-}
-.toggle-btn.active {
 	background: var(--foreground1);
 	color: var(--background0);
+	cursor: pointer;
+	transition: background 0.2s, color 0.2s;
+}
+.toggle-btn.active {
+	color: var(--background0);
+	background: var(--mauve);
 	font-weight: bold;
 }
 .field {
@@ -976,7 +967,9 @@ main {
 	padding-top: 10px;
 }
 
-
+.home {
+	cursor: pointer;
+}
 
 .status {
 	margin: 6px 0 0 0;
@@ -1035,6 +1028,7 @@ video.mirrored, canvas.mirrored {
   	margin: 0;
 	background: var(--teal);
 	color: var(--background0);
+	cursor: pointer;
 }
 
 .detection-btn.active {

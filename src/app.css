@@ -4,4 +4,8 @@
 html, body {
 	background-color: var(--background0);
 	color: var(--foreground1);
+	padding: 20px;
+	max-width: 90%;
+	margin: 0 auto;
+	border: none;
 }
