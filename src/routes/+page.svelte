@@ -1,116 +1,140 @@
 <script lang="ts">
-import {goto} from '$app/navigation';
-import {resolve} from '$app/paths';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
-function goTranslate() {
-	goto(resolve('/translate/'));
-}
+	function goTranslate() {
+		goto(resolve('/translate/'));
+	}
 
-function goLearn() {
-	goto(resolve('/learn/'));
-}
+	function goLearn() {
+		goto(resolve('/learn/'));
+	}
 </script>
 
-<main>
+<main class="page home-page">
 	<section class="hero">
-		<div class="center big-text bold vslink">
-			VSLink
-		</div>
-		<div class="center vslink-description italic">
-			An AI-powered tool that helps you <span class="mauve">learn</span> and <span class="mauve">translate</span> Vietnamese Sign Language in <span class="mauve">real-time</span>.
+		<div class="brand">VSLink</div>
+		<div class="tagline">
+			An AI-powered tool that helps you <span class="accent">learn</span> and <span class="accent">translate</span> Vietnamese Sign Language in <span class="accent">real-time</span>.
 		</div>
 		<div class="button-row">
-			<button class="btn" onclick={goLearn}>Learn</button>
-			<button class="btn" onclick={goTranslate}>Translate</button>
+			<button class="primary-btn" onclick={goLearn}>Learn</button>
+			<button class="secondary-btn" onclick={goTranslate}>Translate</button>
 		</div>
 	</section>
 
-	<section class="more-content">
-		<p>
-			Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod
-			tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim
-			veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea
-			commodo consequat.
-		</p>
-		<p>
-			Duis aute irure dolor in reprehenderit in voluptate velit esse cillum
-			dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
-			proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-		</p>
-		<p>
-			Sed ut perspiciatis unde omnis iste natus error sit voluptatem
-			accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab
-			illo inventore veritatis et quasi architecto beatae vitae dicta sunt
-			explicabo.
-		</p>
+	<section class="features">
+		<div class="feature-card">
+			<h3>Practice words</h3>
+			<p>Choose from a dictionary of sign words and get feedback on hand placement and motion.</p>
+		</div>
+		<div class="feature-card">
+			<h3>Live recognition</h3>
+			<p>Use your camera to test signs and view model predictions in real time.</p>
+		</div>
+		<div class="feature-card">
+			<h3>Feedback-first</h3>
+			<p>See where to improve: hand height, spacing, finger spread, motion, and openness.</p>
+		</div>
 	</section>
 </main>
 
 <style>
-.center {
-	text-align: center;
-}
-.bold {
-	font-weight: bold;
-}
-.italic {
-	font-style: italic;
-}
+	.home-page {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		gap: 36px;
+		padding-top: 50px;
+		padding-bottom: 60px;
+	}
 
-.big-text {
-	font-size: 3em;
-}
+	.hero {
+		max-width: 900px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		gap: 18px;
+	}
 
-.vslink {
-	color: var(--mauve);
-	padding: 20px;
-}
+	.brand {
+		font-size: clamp(2.8rem, 7vw, 5rem);
+		font-weight: 900;
+		color: var(--amber-2);
+		letter-spacing: 0.08em;
+	}
 
-.vslink-description {
-	color: var(--foreground1);
-	font-size: 1.5em;
-}
+	.tagline {
+		font-size: clamp(1.1rem, 2vw, 1.7rem);
+		line-height: 1.5;
+		max-width: 820px;
+		color: var(--text);
+	}
 
-.mauve {
-	color: var(--mauve);
-}
+	.accent {
+		color: var(--amber-2);
+		font-weight: 700;
+	}
 
-.hero {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	min-height: 100vh;
-	padding: 20px;
-}
+	.button-row {
+		display: flex;
+		gap: 16px;
+		margin-top: 12px;
+	}
 
-.button-row {
-	display: flex;
-	gap: 16px;
-	margin-top: 24px;
-}
+	.primary-btn,
+	.secondary-btn {
+		border: none;
+		border-radius: 12px;
+		padding: 12px 26px;
+		font-size: 1rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: transform 0.15s ease, box-shadow 0.15s ease;
+	}
 
-.btn {
-	padding: 12px 28px;
-	font-size: 1em;
-	border: 2px solid var(--mauve);
-	border-radius: 8px;
-	background: transparent;
-	color: var(--mauve);
-	cursor: pointer;
-	transition: background 0.2s, color 0.2s;
-}
+	.primary-btn {
+		background: var(--amber);
+		color: var(--ink);
+	}
 
-.btn:hover {
-	background: var(--mauve);
-	color: var(--background, #fff);
-}
+	.secondary-btn {
+		background: var(--panel);
+		color: var(--text);
+		border: 1px solid var(--panel-border);
+	}
 
-.more-content {
-	max-width: 700px;
-	margin: 0 auto;
-	padding: 60px 20px;
-	line-height: 1.6;
-	color: var(--foreground1);
-}
+	.primary-btn:hover,
+	.secondary-btn:hover {
+		transform: translateY(-1px);
+	}
+
+	.features {
+		max-width: 1100px;
+		width: 100%;
+		display: grid;
+		grid-template-columns: repeat(3, minmax(200px, 1fr));
+		gap: 18px;
+	}
+
+	.feature-card {
+		background: var(--panel);
+		border: 1px solid var(--panel-border);
+		border-radius: 18px;
+		padding: 22px 18px;
+		box-shadow: 0 4px 18px var(--shadow);
+	}
+
+	.feature-card h3 {
+		margin-top: 0;
+		color: var(--amber-2);
+	}
+
+	.feature-card p {
+		margin-bottom: 0;
+		color: var(--muted);
+		line-height: 1.6;
+	}
 </style>

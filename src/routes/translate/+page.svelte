@@ -735,183 +735,130 @@ async function handleLabelsUpload(event: Event) {
 </script>
 
 
-<main>
-<div class="grid">
+<main class="page">
+	<section class="shell">
+		<div class="panel big-one">
+			<div class="header-row">
+				<h1>Translate</h1>
+				<button class="ghost-button" type="button" onclick={goHome}>Home</button>
+			</div>
 
-	<div class="big-one" box-="round" shear-="top">
-	<div class="header">
-		<span is-="badge" variant-="mauve">Input</span>
-	</div>
-	<div class="box-content">
-	<div class="toggle-group">
-	<button 
-		class="toggle-btn" 
-		class:active={appState.input === 'camera'} 
-		onclick={() => handleModeChange('camera')}
-	>
-		Camera
-	</button>
-	<button 
-		class="toggle-btn" 
-		class:active={appState.input === 'video'} 
-		onclick={() => handleModeChange('video')}
-	>
-		Video file (.mp4, .webm)
-	</button>
-	</div>
-	<div is-="separator" variant-="mauve" direction-="horizontal"></div>
-	{#if appState.input === 'video'}
-	
-	<div class="field">
-		<label for="video-input" ><strong>Upload Video File (.mp4, .webm):</strong></label>
-		<input 
-			id="video-input" 
-			type="file" 
-			accept="video/*" 
-			onchange={handleVideoUpload} 
-		/>
-		<p class="status">
-			Video Status: <strong>{appState.videoFile}</strong>
-		</p>
-	</div>
-	{/if}
-	<div class="video-container" box-="round">
-		<video 
-			bind:this={videoElement}  
-			playsinline 
-			muted
-			controls={appState.input === 'video'}
-			class:mirrored={appState.input === 'camera'}
-			onended={handleVideoEnded}
-		></video>
-		
-		<canvas 
-		bind:this={canvasElement} 
-		class="canvas-overlay" 
-		class:mirrored={appState.input === 'camera'}
-		></canvas>
+			<div class="toggle-group">
+				<button
+					type="button"
+					class="toggle-btn"
+					class:active={appState.input === 'camera'}
+					onclick={() => handleModeChange('camera')}
+				>
+					Camera
+				</button>
+				<button
+					type="button"
+					class="toggle-btn"
+					class:active={appState.input === 'video'}
+					onclick={() => handleModeChange('video')}
+				>
+					Video file
+				</button>
+			</div>
 
-		<div class="status-indicator" class:active={appState.isDetecting}>
-			<span class="status-dot"></span>
+			{#if appState.input === 'video'}
+				<div class="field">
+					<label for="video-input"><strong>Upload Video File (.mp4, .webm):</strong></label>
+					<input
+						id="video-input"
+						type="file"
+						accept="video/*"
+						onchange={handleVideoUpload}
+					/>
+					<p class="status">
+						Video Status: <strong>{appState.videoFile}</strong>
+					</p>
+				</div>
+			{/if}
+
+			<div class="video-container">
+				<video
+					bind:this={videoElement}
+					playsinline
+					muted
+					controls={appState.input === 'video'}
+					class:mirrored={appState.input === 'camera'}
+					onended={handleVideoEnded}
+				></video>
+
+				<canvas
+					bind:this={canvasElement}
+					class="canvas-overlay"
+					class:mirrored={appState.input === 'camera'}
+				></canvas>
+
+				<div class="status-indicator" class:active={appState.isDetecting}>
+					<span class="status-dot"></span>
+				</div>
+			</div>
+
+			<div class="controls-row">
+				<div class="detected-box">
+					Detected Sign: <strong>{appState.prediction}</strong>
+				</div>
+
+				<button
+					type="button"
+					class="primary-button"
+					class:active={appState.isDetecting}
+					onclick={toggleDetection}
+				>
+					{appState.isDetecting ? 'Stop Detection' : 'Start Detection'}
+				</button>
+			</div>
 		</div>
 
-	</div>
+		<div class="panel small-one">
+			<div class="header-row">
+				<h2>Top predictions</h2>
+			</div>
 
-	<div class="controls-row">
-	<div class="detected-box">
-		Detected Sign: <strong>{appState.prediction}</strong>
-	</div>
-	<button 
-		type="button" 
-		class="toggle-btn detection-btn" 
-		class:active={appState.isDetecting} 
-		onclick={toggleDetection}
-	>
-		{appState.isDetecting ? 'Stop Detection' : 'Start Detection'}
-	</button>
-	</div>
-	</div>
-	</div>
-
-	<div class="small-one">
-	<div class="column predictions-column" box-="round" shear-="top">
-	<div class="header">
-		<span is-="badge" variant-="mauve">Top Predictions</span>
-	</div>
-	<div class="box-content">
-
-	{#if appState.topPredictions.length === 0}
-		<p>Waiting for frames...</p>
-	{:else}
-		<table class="has-shadow predictions-table" box-="round" divide-="both">
-		<thead>
-				<tr>
-					<th>Ranking</th>
-					<th>Label</th>
-					<th>Confidence</th>
-				</tr>
-		</thead>
-		{#each appState.topPredictions as item, index (item.label)}
-			
-			
-			<tbody>
-				<tr>
-					<td>#{index + 1}</td>
-					<td>{item.label}</td>
-					<td>{item.percentage}</td>
-				</tr>
-			</tbody>
-		
-		{/each}
-		</table>
-		
-		
-	{/if}
-	
-
-	</div>
-	</div>
-
-	<!-- <div class="column" box-="round" shear-="top">
-	<div class="header">
-		<span is-="badge" variant-="mauve">Advanced</span>
-	</div>
-	<div class="box-content">
-
-	<label for="model-input"><strong>Select ONNX Model File (.onnx):</strong></label>
-	<input 
-		id="model-input"
-		type="file" 
-		accept=".onnx" 
-		onchange={handleModelUpload}
-		disabled={appState.isLoading} 
-	/>
-	<p class="status">
-		Model Status: <strong>{appState.isLoading ? 'Loading model into memory...' : appState.modelName}</strong>
-	</p>
-	<div is-="separator" variant-="mauve" direction-="horizontal"></div>
-	<label for="label-input"><strong>Upload Labels File (.json):</strong></label>
-	<input 
-		id="label-input"
-		type="file" 
-		accept=".json" 
-		onchange={handleLabelsUpload} 
-	/>
-	<p class="status">
-		Label Status: <strong>{labelStatus}</strong>
-	</p>
-
-	
-
-	</div>
-	</div> -->
-
-	<div class="column">
-		<button class="big-button home" box-="round" size-="large" onclick={goHome}>Home</button>
-	</div>
-	</div>
-</div>
-	
-
-
-
-
+			{#if appState.topPredictions.length === 0}
+				<p class="muted">Waiting for frames...</p>
+			{:else}
+				<div class="predictions-wrap">
+					<table class="predictions-table">
+						<thead>
+							<tr>
+								<th>Ranking</th>
+								<th>Label</th>
+								<th>Confidence</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each appState.topPredictions as item, index (item.label)}
+								<tr>
+									<td>#{index + 1}</td>
+									<td>{item.label}</td>
+									<td>{item.percentage}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</div>
+	</section>
 </main>
-
 <style>
-
-
-
-.big-button {
-	width: 100%;
-	box-sizing: border-box;
+.page {
+	min-height: calc(100vh - 72px);
+	padding: 32px 20px;
+	background: var(--bg);
 }
 
-.grid {
+.shell {
+	max-width: 1200px;
+	margin: 0 auto;
 	display: grid;
 	grid-template-columns: 2fr 1fr;
 	gap: 20px;
-	align-items: stretch;
 }
 
 .big-one,
@@ -922,170 +869,219 @@ async function handleLabelsUpload(event: Event) {
 	box-sizing: border-box;
 }
 
-.big-one {
-	min-width: 1280px;
+.panel {
+	background: var(--panel);
+	border: 1px solid var(--panel-border);
+	border-radius: 18px;
+	padding: 18px;
+	box-shadow: 0 4px 18px var(--shadow);
 }
 
-.predictions-column {
-	height: 30%;
-	flex-shrink: 0;
-}
-
-.predictions-column .box-content {
-	overflow-y: auto;
-}
-
-.box-content {
+.header-row {
 	display: flex;
-	flex-direction: column;
-	padding: 10px;
-	gap: 10px;
-	flex: 1;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 16px;
 }
 
+.header-row h1,
+.header-row h2 {
+	margin: 0;
+	color: var(--text);
+	font-size: 1.5rem;
+}
+
+.ghost-button {
+	background: transparent;
+	color: var(--text);
+	border: 1px solid var(--panel-border);
+	border-radius: 10px;
+	padding: 8px 12px;
+	cursor: pointer;
+}
+
+.field {
+	margin-bottom: 14px;
+}
+
+.field label {
+	display: block;
+	margin-bottom: 8px;
+	color: var(--text);
+}
+
+.field input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 10px 12px;
+	border-radius: 10px;
+	border: 1px solid var(--panel-border);
+	background: var(--panel-alt);
+	color: var(--text);
+}
+
+.status {
+	margin: 8px 0 0;
+	color: var(--muted);
+}
 
 .toggle-group {
 	display: flex;
 	gap: 10px;
-	margin-bottom: 10px;
+	margin-bottom: 14px;
 }
+
 .toggle-btn {
 	flex: 1;
-	font-size: 1em;
-	background: var(--foreground1);
-	color: var(--background0);
+	border: 1px solid var(--panel-border);
+	background: var(--panel-alt);
+	color: var(--text);
+	border-radius: 10px;
+	padding: 10px 12px;
 	cursor: pointer;
-	transition: background 0.2s, color 0.2s;
+	font-weight: 600;
 }
+
 .toggle-btn.active {
-	color: var(--background0);
-	background: var(--mauve);
-	font-weight: bold;
-}
-.field {
-	margin-top: 10px;
-	padding-top: 10px;
+	background: var(--amber);
+	color: var(--ink);
+	border-color: var(--amber);
 }
 
-.home {
-	cursor: pointer;
-}
-
-.status {
-	margin: 6px 0 0 0;
-}
 .video-container {
 	position: relative;
 	width: 100%;
-	height: auto;
-	aspect-ratio: 16/9;
-	background-color: #000;
-	border-radius: 8px;
+	aspect-ratio: 16 / 9;
+	background: #f0ece8;
+	border: 1px solid var(--panel-border);
+	border-radius: 14px;
 	overflow: hidden;
+	margin-bottom: 14px;
 }
 
-
-.video-container video {
-	display: block;
-	width: 100%;
-	height: auto;
-	max-height: 70vh;
-}
-
-.video-container canvas{
+.video-container video,
+.canvas-overlay {
 	position: absolute;
 	top: 0;
 	left: 0;
 	width: 100%;
-	height: auto;
-	pointer-events: none;	
+	height: 100%;
+	object-fit: cover;
+	display: block;
 }
 
-video.mirrored, canvas.mirrored {
+.canvas-overlay {
+	pointer-events: none;
+}
+
+.video-container video.mirrored,
+.canvas-overlay.mirrored {
 	transform: scaleX(-1);
 }
+
 .controls-row {
 	display: flex;
 	gap: 10px;
-	margin-top: 10px;
-	align-items: stretch;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
 }
 
 .detected-box {
 	flex: 1;
-	padding: 10px;
-	font-size: 1em;
-	background: var(--foreground1);
-	color: var(--background0);
+	min-height: 50px;
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	box-sizing: border-box;
+	border-radius: 12px;
+	border: 1px solid var(--panel-border);
+	background: var(--panel-alt);
+	padding: 12px 14px;
+	color: var(--text);
 }
 
-
-.detection-btn {
-  	margin: 0;
-	background: var(--teal);
-	color: var(--background0);
+.primary-button {
+	border: none;
+	border-radius: 12px;
+	padding: 12px 18px;
+	background: var(--amber);
+	color: var(--ink);
+	font-weight: 700;
 	cursor: pointer;
 }
 
-.detection-btn.active {
-	background: var(--maroon);
-	color: var(--background0);
-}
-
-.canvas-overlay {
-	z-index: 5;
-}
-
-.predictions-table {
-	width: 90%;
-}
-
-@media (max-width: 900px) {
-	.grid {
-		grid-template-columns: 1fr;
-	}
+.primary-button.active {
+	background: var(--amber-2);
 }
 
 .status-indicator {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: rgba(0, 0, 0, 0.7);
-    border: 1px solid var(--red);
-    border-radius: 20px;
-    color: var(--red);
-    font-size: 0.8em;
-    font-weight: bold;
-    letter-spacing: 0.5px;
-    backdrop-filter: blur(4px);
-    transition: all 0.2s ease;
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.12);
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+.status-indicator.active {
+	background: rgba(57, 123, 16, 0.2);
 }
 
 .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: var(--red);
-}
-
-
-.status-indicator.active {
-    border-color: var(--teal);
-    color: var(--teal);
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--red);
+	display: block;
 }
 
 .status-indicator.active .status-dot {
-    background-color: var(--teal);
+	background: var(--green);
 }
 
+.predictions-wrap {
+	max-height: 420px;
+	overflow: auto;
+}
 
+.predictions-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.predictions-table th,
+.predictions-table td {
+	padding: 10px 8px;
+	border-bottom: 1px solid var(--panel-border);
+	text-align: left;
+	color: var(--text);
+}
+
+.predictions-table th {
+	color: var(--muted);
+	font-size: 0.82rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.meta-card {
+	margin-top: 18px;
+	padding: 14px;
+	border-radius: 12px;
+	background: var(--panel-alt);
+	border: 1px solid var(--panel-border);
+	color: var(--text);
+}
+
+.meta-card p {
+	margin: 8px 0;
+}
+
+.muted {
+	color: var(--muted);
+}
 </style>

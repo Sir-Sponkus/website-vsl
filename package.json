@@ -35,6 +35,7 @@
 	"dependencies": {
 		"@mediapipe/tasks-vision": "^1.0.0",
 		"@webtui/css": "^0.1.10",
+		"@webtui/plugin-nf": "^0.1.2",
 		"@webtui/theme-catppuccin": "^0.0.5",
 		"7.css": "^0.21.1",
 		"onnxruntime-web": "^1.27.0"
