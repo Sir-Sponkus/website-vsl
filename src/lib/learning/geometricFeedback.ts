@@ -53,12 +53,10 @@ export function buildMetricsFromLandmarks(
 		x: (leftShoulder.x + rightShoulder.x) / 2,
 		y: (leftShoulder.y + rightShoulder.y) / 2
 	};
-
 	const shoulderWidth = distance(leftShoulder, rightShoulder) || 1;
 
 	const leftWrist = leftHand && leftHand[0] ? leftHand[0] : pose[15] ?? pose[0];
 	const rightWrist = rightHand && rightHand[0] ? rightHand[0] : pose[16] ?? pose[0];
-
 	const leftHandY = leftWrist.y - shoulderCenter.y;
 	const rightHandY = rightWrist.y - shoulderCenter.y;
 	const handGap = distance(leftWrist, rightWrist);
@@ -146,7 +144,6 @@ export function evaluatePracticeAttempt(
 
 	const leftSpreadDelta = Math.abs(metrics.leftSpread - targetSpread);
 	const rightSpreadDelta = Math.abs(metrics.rightSpread - targetSpread);
-
 	if (leftSpreadDelta > 0.15 || rightSpreadDelta > 0.15) {
 		issues.push({
 			id: 'spread',
@@ -159,7 +156,6 @@ export function evaluatePracticeAttempt(
 
 	const leftOpenDelta = Math.abs(metrics.leftOpen - targetOpen);
 	const rightOpenDelta = Math.abs(metrics.rightOpen - targetOpen);
-
 	if (leftOpenDelta > 0.12 || rightOpenDelta > 0.12) {
 		issues.push({
 			id: 'open',
