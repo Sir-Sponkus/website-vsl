@@ -1,17 +1,17 @@
 <script lang="ts">
 	import '../app.css';
 	let { children } = $props();
-	import { resolve } from '$app/paths';
+	import { asset, resolve } from '$app/paths';
 </script>
 
 <svelte:head>
 	<title>VSLink</title>
-	<link rel="icon" href="/32x32.png" />
+	<link rel="icon" href={asset('/eye.svg')} type="image/svg+xml" />
 </svelte:head>
 
 <nav class="top-nav" aria-label="Main navigation">
 	<div class="nav-inner">
-		<a href={resolve('/')} class="nav-brand">VSLink</a>
+		<a href={resolve('/')} class="nav-brand"><img src={asset('/images/vslink.svg')} alt="vslink" width="100" height="auto" /></a>
 		<div class="nav-links">
 			<a href={resolve('/learn')}>Learn</a>
 			<a href={resolve('/translate')}>Translate</a>
@@ -42,7 +42,7 @@
 	}
 
 	.nav-brand {
-		color: var(--amber-2);
+		color: var(--primary);
 		text-decoration: none;
 		font-weight: 800;
 		letter-spacing: 0.06em;
@@ -65,6 +65,6 @@
 
 	.nav-links a:hover {
 		background: rgba(199, 158, 55, 0.12);
-		color: var(--amber-2);
+		color: var(--primary);
 	}
 </style>

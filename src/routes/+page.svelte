@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { asset, resolve } from '$app/paths';
 
 	function goTranslate() {
 		goto(resolve('/translate/'));
@@ -13,7 +13,7 @@
 
 <main class="page home-page">
 	<section class="hero">
-		<div class="brand">VSLink</div>
+		<img src={asset('/images/vslink.svg')} alt="vslink" width=50% height="auto" />
 		<div class="tagline">
 			An AI-powered tool that helps you <span class="accent">learn</span> and <span class="accent">translate</span> Vietnamese Sign Language in <span class="accent">real-time</span>.
 		</div>
@@ -62,7 +62,7 @@
 	.brand {
 		font-size: clamp(2.8rem, 7vw, 5rem);
 		font-weight: 900;
-		color: var(--amber-2);
+		color: var(--primary);
 		letter-spacing: 0.08em;
 	}
 
@@ -74,7 +74,7 @@
 	}
 
 	.accent {
-		color: var(--amber-2);
+		color: var(--primary-hover);
 		font-weight: 700;
 	}
 
@@ -96,7 +96,7 @@
 	}
 
 	.primary-btn {
-		background: var(--amber);
+		background: var(--primary);
 		color: var(--ink);
 	}
 
@@ -129,7 +129,7 @@
 
 	.feature-card h3 {
 		margin-top: 0;
-		color: var(--amber-2);
+		color: var(--primary);
 	}
 
 	.feature-card p {

@@ -1,43 +1,31 @@
-@import '@webtui/css';
-@import '@webtui/theme-catppuccin';
-
 :root {
-	--stone: #bdbdbd;
-	--stone-2: #848484;
-	--stone-3: #515151;
-	--ink: #181010;
-	--amber: #c79e37;
-	--amber-2: #c06930;
-	--rust: #873d26;
-	--copper: #482010;
-	--olive: #6ba521;
-	--green: #397b10;
-	--teal: #234a41;
-	--cyan: #3093bf;
-	--blue: #1b59ab;
-	--navy: #1b2e79;
-	--lavender: #8067d2;
-	--purple: #5f3ca2;
-	--plum: #3d246d;
-	--red: #b02028;
-	--red-2: #851513;
-	--red-3: #570b00;
-	--sand: #bd8c63;
-	--sand-2: #b56342;
-	--blush: #d6a494;
-	--rose: #c2616c;
-	--magenta: #8c3148;
+	--bg: #0c1520;
+	--panel: #12202e;
+	--panel-alt: #182b3c;
+	--panel-border: rgba(148, 180, 209, 0.14);
+	--shadow: rgba(2, 8, 14, 0.5);
 
-	--bg: #f4f1ee;
-	--panel: #ffffff;
-	--panel-alt: #f8f4f1;
-	--panel-border: #dfd7d0;
-	--text: #1f1a1a;
-	--muted: #5a4e4b;
-	--primary: var(--amber);
-	--primary-strong: var(--amber-2);
-	--nav-bg: rgba(255, 255, 255, 0.9);
-	--shadow: rgba(24, 16, 16, 0.08);
+	--text: #e9eff6;
+	--text-muted: #8fa3b8;
+
+	--primary: #3680c2;
+	--primary-hover: #4991d1;
+	--primary-active: #2c6aa3;
+	--primary-ink: #08141f;
+
+	--amber: #e0a83f;
+	--amber-2: #b8842b;
+	--ink: #201400;
+
+	--danger: #e5636a;
+	--danger-soft: rgba(229, 99, 106, 0.12);
+	--danger-border: rgba(229, 99, 106, 0.32);
+	--danger-text: #f3c4c8;
+
+	--success: #3fae7c;
+	--success-soft: rgba(63, 174, 124, 0.12);
+	--success-border: rgba(63, 174, 124, 0.32);
+	--success-text: #bfe8d4;
 }
 
 html, body {
@@ -46,7 +34,7 @@ html, body {
 	padding: 0;
 	margin: 0;
 	border: none;
-	font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+	font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
 body {

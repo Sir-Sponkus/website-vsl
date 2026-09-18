@@ -20,6 +20,7 @@
 		words: [] as WordEntry[],
 		search: '',
 		selectedWord: '',
+		dropdownOpen: false,
 		status: 'idle' as PracticeStatus,
 		countdown: 0,
 		cameraReady: false,
@@ -33,6 +34,7 @@
 	});
 
 	let videoElement: HTMLVideoElement | null = null;
+	let wordPickerEl: HTMLDivElement | null = null;
 	let handLandmarker: HandLandmarker | null = null;
     let poseLandmarker: PoseLandmarker | null = null;
     let session: ort.InferenceSession | null = null;
@@ -54,13 +56,21 @@
 		loadWordCatalog();
 		await setupRecognitionPipeline();
 		await startCamera();
+		window.addEventListener('click', handleClickOutside);
 	});
 
 	onDestroy(() => {
 		if (countdownTimer) clearInterval(countdownTimer);
 		if (animationFrameId) cancelAnimationFrame(animationFrameId);
+		window.removeEventListener('click', handleClickOutside);
 		stopCamera();
 	});
+
+	function handleClickOutside(event: MouseEvent) {
+		if (wordPickerEl && !wordPickerEl.contains(event.target as Node)) {
+			appState.dropdownOpen = false;
+		}
+	}
 
 	async function loadWordCatalog() {
         try {
@@ -390,6 +400,8 @@
 
 	function handleWordSelect(word: string) {
 		appState.selectedWord = word;
+		appState.search = '';
+		appState.dropdownOpen = false;
 		resetPractice();
 	}
 
@@ -405,30 +417,36 @@
 				<h1>Learn a sign</h1>
 			</div>
 
-			<div class="word-picker">
-				<label for="word-search">Search word</label>
-				<input
-					id="word-search"
-					type="text"
-					bind:value={appState.search}
-					placeholder="Type a Vietnamese sign word..."
-				/>
-			</div>
+			<div class="word-picker" bind:this={wordPickerEl}>
+				<label for="word-search">Word</label>
+				<div class="combobox">
+					<input
+						id="word-search"
+						type="text"
+						bind:value={appState.search}
+						placeholder={appState.selectedWord || 'Search a Vietnamese sign word...'}
+						onfocus={() => (appState.dropdownOpen = true)}
+						oninput={() => (appState.dropdownOpen = true)}
+					/>
 
-			<div class="word-list">
-				{#if filteredWords.length === 0}
-					<p class="muted">No words match your search.</p>
-				{:else}
-					{#each filteredWords as word (word.label)}
-						<button
-							type="button"
-							class:selected={appState.selectedWord === word.label}
-							onclick={() => handleWordSelect(word.label)}
-						>
-							{word.label}
-						</button>
-					{/each}
-				{/if}
+					{#if appState.dropdownOpen}
+						<div class="dropdown">
+							{#if filteredWords.length === 0}
+								<p class="muted">No words match your search.</p>
+							{:else}
+								{#each filteredWords as word (word.label)}
+									<button
+										type="button"
+										class:selected={appState.selectedWord === word.label}
+										onclick={() => handleWordSelect(word.label)}
+									>
+										{word.label}
+									</button>
+								{/each}
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		</div>
 
@@ -468,7 +486,7 @@
 
 				<button
 					type="button"
-					class="secondary"
+					class="primary"
 					disabled={appState.status !== 'recording'}
 					onclick={stopAndAnalyze}
 				>
@@ -516,12 +534,6 @@
 </main>
 
 <style>
-	:global(body) {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    }
 
 	.page {
         min-height: calc(100vh - 72px);
@@ -558,16 +570,15 @@
 		font-size: 1.7rem;
 	}
 
-	.home-link {
-		color: #d8b4fe;
-		text-decoration: none;
-	}
-
 	.word-picker {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		margin-bottom: 16px;
+	}
+
+	.combobox {
+		position: relative;
 	}
 
 	input {
@@ -576,20 +587,62 @@
 		padding: 10px 12px;
 		border-radius: 10px;
 		background: #ffffff;
-        border: 1px solid #e2e8f0;
-        color: #111827;
+        border: 1px solid #dbe6f0;
+        color: #0f1c28;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
 	}
 
-	.word-list button {
+	input:focus {
+		outline: none;
+		border-color: var(--primary);
+		box-shadow: 0 0 0 3px rgba(54, 128, 194, 0.25);
+	}
+
+	.dropdown {
+		position: absolute;
+		top: calc(100% + 6px);
+		left: 0;
+		right: 0;
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		max-height: 280px;
+		overflow-y: auto;
+		padding: 8px;
+		border-radius: 12px;
+		background: var(--panel);
+		border: 1px solid var(--panel-border);
+		box-shadow: 0 12px 28px var(--shadow);
+	}
+
+	.dropdown button {
         background: var(--panel-alt);
         border: 1px solid var(--panel-border);
         color: var(--text);
+        text-align: left;
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
     }
 
-    .word-list button.selected {
-        background: var(--amber);
-        border-color: var(--amber-2);
+    .dropdown button:hover {
+        border-color: var(--primary);
+    }
+
+    .dropdown button.selected {
+        background: var(--primary-hover);
+        border-color: var(--primary-active);
         color: var(--ink);
+    }
+
+    .dropdown button.selected:hover {
+        border-color: var(--amber-2);
+    }
+
+    .dropdown p.muted {
+        margin: 4px 6px;
     }
 
     .reference-box,
@@ -599,8 +652,17 @@
     }
 
     .primary {
-        background: var(--amber);
-        color: var(--ink);
+        background: var(--primary);
+        color: var(--primary-ink);
+        transition: background-color 0.15s ease;
+    }
+
+    .primary:hover:not(:disabled) {
+        background: var(--primary-hover);
+    }
+
+    .primary:active:not(:disabled) {
+        background: var(--primary-active);
     }
 
     .secondary {
@@ -617,9 +679,8 @@
 	.selected-word .label {
 		display: block;
 		font-size: 0.76rem;
-		color: #c4b5fd;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		color: var(--primary-hover);
+		letter-spacing: 0.04em;
 		margin-bottom: 6px;
 	}
 
@@ -641,16 +702,17 @@
 	.camera-box video {
 		display: block;
 		width: 100%;
+		padding: 100px;
 	}
 
 	.placeholder {
 		padding: 24px 16px;
 		text-align: center;
-		color: #cbd5e1;
+		color: var(--text-muted);
 	}
 
 	.muted {
-		color: #94a3b8;
+		color: var(--text-muted);
 	}
 
 	.status-row {
@@ -671,8 +733,14 @@
 
 	button.ghost {
 		background: transparent;
-		color: #cbd5e1;
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: var(--text-muted);
+		border: 1px solid var(--panel-border);
+		transition: border-color 0.15s ease, color 0.15s ease;
+	}
+
+	button.ghost:hover:not(:disabled) {
+		border-color: var(--primary);
+		color: var(--text);
 	}
 
 	button:disabled {
@@ -683,28 +751,36 @@
 	.countdown {
 		margin: 8px 0 14px;
 		font-size: 1.15rem;
-		color: #f9a8d4;
+		color: var(--amber);
 		font-weight: 700;
 	}
 
 	.alert {
-		background: rgba(239, 68, 68, 0.1);
-		color: #fecaca;
-		border: 1px solid rgba(239, 68, 68, 0.25);
+		background: var(--danger-soft);
+		color: var(--danger-text);
+		border: 1px solid var(--danger-border);
 		padding: 10px 12px;
 		border-radius: 10px;
 		margin-bottom: 12px;
 	}
 
 	.result-card {
-        background: rgba(57, 123, 16, 0.08);
-        border: 1px solid rgba(57, 123, 16, 0.2);
+        background: var(--success-soft);
+        border: 1px solid var(--success-border);
+        padding: 14px 16px;
+        border-radius: 12px;
+        margin-bottom: 12px;
     }
 
+    /* Neutral by default — this shows every status message, not just errors,
+       so it should read as calm guidance rather than a permanent warning. */
     .feedback {
         background: var(--panel-alt);
-        border: 1px solid var(--panel-border);
         color: var(--text);
+        border: 1px solid var(--panel-border);
+		padding: 10px 12px;
+		border-radius: 10px;
+		margin-bottom: 12px;
     }
 
 	.score-row {
@@ -721,13 +797,13 @@
 
 	.confidence {
 		margin: 0 0 12px;
-		color: #d1fae5;
+		color: var(--success-text);
 	}
 
 	.result-card ul {
 		margin: 0;
 		padding-left: 18px;
-		color: #e2e8f0;
+		color: var(--text);
 	}
 
 </style>

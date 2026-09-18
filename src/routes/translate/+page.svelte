@@ -738,10 +738,6 @@ async function handleLabelsUpload(event: Event) {
 <main class="page">
 	<section class="shell">
 		<div class="panel big-one">
-			<div class="header-row">
-				<h1>Translate</h1>
-				<button class="ghost-button" type="button" onclick={goHome}>Home</button>
-			</div>
 
 			<div class="toggle-group">
 				<button
@@ -884,22 +880,12 @@ async function handleLabelsUpload(event: Event) {
 	gap: 12px;
 	margin-bottom: 16px;
 }
-
-.header-row h1,
 .header-row h2 {
 	margin: 0;
 	color: var(--text);
 	font-size: 1.5rem;
 }
 
-.ghost-button {
-	background: transparent;
-	color: var(--text);
-	border: 1px solid var(--panel-border);
-	border-radius: 10px;
-	padding: 8px 12px;
-	cursor: pointer;
-}
 
 .field {
 	margin-bottom: 14px;
@@ -935,7 +921,7 @@ async function handleLabelsUpload(event: Event) {
 .toggle-btn {
 	flex: 1;
 	border: 1px solid var(--panel-border);
-	background: var(--panel-alt);
+	background: var(--primary);
 	color: var(--text);
 	border-radius: 10px;
 	padding: 10px 12px;
@@ -944,7 +930,13 @@ async function handleLabelsUpload(event: Event) {
 }
 
 .toggle-btn.active {
-	background: var(--amber);
+	background: var(--primary-active);
+	color: var(--ink);
+	border-color: var(--amber);
+}
+
+.primary.active {
+	background: var(--primary-active);
 	color: var(--ink);
 	border-color: var(--amber);
 }
@@ -1004,14 +996,14 @@ async function handleLabelsUpload(event: Event) {
 	border: none;
 	border-radius: 12px;
 	padding: 12px 18px;
-	background: var(--amber);
+	background: var(--primary);
 	color: var(--ink);
 	font-weight: 700;
 	cursor: pointer;
 }
 
 .primary-button.active {
-	background: var(--amber-2);
+	background: var(--primary);
 }
 
 .status-indicator {
@@ -1035,12 +1027,12 @@ async function handleLabelsUpload(event: Event) {
 	width: 8px;
 	height: 8px;
 	border-radius: 50%;
-	background: var(--red);
+	background: red;
 	display: block;
 }
 
 .status-indicator.active .status-dot {
-	background: var(--green);
+	background: green;
 }
 
 .predictions-wrap {
