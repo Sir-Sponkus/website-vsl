@@ -85,9 +85,6 @@
 
             const labels = (await labelsResponse.json()) as string[];
 
-            // Map of word label -> video URL, e.g. { "xin chào": "/spoter/videos/xin-chao.mp4" }.
-            // Falls back to an empty map if the file is missing, so a word with no
-            // entry just shows the "no reference video" placeholder instead of erroring.
             const videoMap: Record<string, string> = videosResponse.ok
                 ? await videosResponse.json()
                 : {};
@@ -95,7 +92,7 @@
             appState.words = labels.map((label, index) => ({
                 id: String(index + 1),
                 label,
-                videoUrl: videoMap[label] ? asset(videoMap[label]) : '',
+                videoUrl: videoMap[label] ? videoMap[label] : '',
                 difficulty: index % 5 === 0 ? 'hard' : index % 3 === 0 ? 'medium' : 'easy'
             }));
 
