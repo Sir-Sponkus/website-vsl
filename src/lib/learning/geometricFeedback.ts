@@ -1,3 +1,5 @@
+import { i18n } from '$lib/i18n/i18n.svelte';
+
 export type PracticeMetrics = {
 	shoulderWidth: number;
 	leftHandY: number;
@@ -124,8 +126,8 @@ export function evaluatePracticeAttempt(
 	if (leftHeightDelta > 0.12 || rightHeightDelta > 0.12) {
 		issues.push({
 			id: 'height',
-			title: 'Hand height',
-			message: 'Your hands are slightly too high or too low. Bring them closer to the shoulder line.',
+			title: i18n.t.issueHeightTitle,
+			message: i18n.t.issueHeightMessage,
 			severity: 'medium'
 		});
 		score -= Math.max(8, (leftHeightDelta + rightHeightDelta) * 100);
@@ -135,8 +137,8 @@ export function evaluatePracticeAttempt(
 	if (gapDelta > 0.12 * metrics.shoulderWidth) {
 		issues.push({
 			id: 'spacing',
-			title: 'Hand spacing',
-			message: 'Move your hands closer together or farther apart to better match the target pose.',
+			title: i18n.t.issueSpacingTitle,
+			message: i18n.t.issueSpacingMessage,
 			severity: 'medium'
 		});
 		score -= 12;
@@ -147,8 +149,8 @@ export function evaluatePracticeAttempt(
 	if (leftSpreadDelta > 0.15 || rightSpreadDelta > 0.15) {
 		issues.push({
 			id: 'spread',
-			title: 'Finger spread',
-			message: 'Spread your fingers a little more or relax them so the hand shape is cleaner.',
+			title: i18n.t.issueSpreadTitle,
+			message: i18n.t.issueSpreadMessage,
 			severity: 'high'
 		});
 		score -= Math.max(10, (leftSpreadDelta + rightSpreadDelta) * 80);
@@ -159,8 +161,8 @@ export function evaluatePracticeAttempt(
 	if (leftOpenDelta > 0.12 || rightOpenDelta > 0.12) {
 		issues.push({
 			id: 'open',
-			title: 'Palm opening',
-			message: 'The hand opening is off. Try making the palm clearer and spreading the fingers more evenly.',
+			title: i18n.t.issueOpenTitle,
+			message: i18n.t.issueOpenMessage,
 			severity: 'medium'
 		});
 		score -= Math.max(8, (leftOpenDelta + rightOpenDelta) * 70);
@@ -169,8 +171,8 @@ export function evaluatePracticeAttempt(
 	if (metrics.confidence < 0.5) {
 		issues.push({
 			id: 'visibility',
-			title: 'Visibility',
-			message: 'The model cannot see both hands clearly enough. Move into frame and keep your hands visible.',
+			title: i18n.t.issueVisibilityTitle,
+			message: i18n.t.issueVisibilityMessage,
 			severity: 'high'
 		});
 		score -= 15;
@@ -183,20 +185,20 @@ export function evaluatePracticeAttempt(
 	else if (score < 82) status = 'close';
 
 	const feedback = [
-		`You are practicing "${selectedWord}".`,
+		i18n.t.practicingWord(selectedWord),
 		status === 'correct'
-			? 'Nice work — the sign is close to the target form.'
+			? i18n.t.feedbackCorrect
 			: status === 'close'
-				? 'You are close. Minor adjustments to hand placement and spacing will make the sign cleaner.'
-				: 'The sign needs more correction. Focus on hand placement, finger spacing, and palm openness before retrying.'
+				? i18n.t.feedbackClose
+				: i18n.t.feedbackNeedsImprovement
 	];
 
 	const summary =
 		status === 'correct'
-			? 'Good sign shape.'
+			? i18n.t.summaryCorrect
 			: status === 'close'
-				? 'Close but still needs fine-tuning.'
-				: 'Not quite there yet.';
+				? i18n.t.summaryClose
+				: i18n.t.summaryNeedsImprovement;
 
 	return {
 		status,

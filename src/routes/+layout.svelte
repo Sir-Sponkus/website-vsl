@@ -1,7 +1,11 @@
 <script lang="ts">
 	import '../app.css';
+	import { i18n } from '$lib/i18n/i18n.svelte';
 	let { children } = $props();
 	import { asset, resolve } from '$app/paths';
+
+
+
 </script>
 
 <svelte:head>
@@ -13,9 +17,28 @@
 	<div class="nav-inner">
 		<a href={resolve('/')} class="nav-brand"><img src={asset('/images/vslink.svg')} alt="vslink" width="100" height="auto" /></a>
 		<div class="nav-links">
-			<a href={resolve('/learn')}>Learn</a>
-			<a href={resolve('/translate')}>Translate</a>
+			<a href={resolve('/learn')}>{i18n.t.learnButton}</a>
+			<a href={resolve('/translate')}>{i18n.t.translateButton}</a>
 		</div>
+		<div class="lang-switch">
+			<button
+				type="button"
+				class="lang-btn"
+				class:active={i18n.lang === 'en'}
+				onclick={() => i18n.setLang('en')}
+			>
+				EN
+			</button>
+			<button
+				type="button"
+				class="lang-btn"
+				class:active={i18n.lang === 'vi'}
+				onclick={() => i18n.setLang('vi')}
+			>
+				VI
+			</button>
+</div>
+		
 	</div>
 </nav>
 
@@ -66,5 +89,34 @@
 	.nav-links a:hover {
 		background: rgba(199, 158, 55, 0.12);
 		color: var(--primary);
+	}
+
+	.lang-switch {
+		position: fixed;
+		top: 12px;
+		right: 20px;
+		z-index: 50;
+		display: flex;
+		gap: 6px;
+	}
+ 
+	.lang-btn {
+		width: 40px;
+		border: 1px solid var(--panel-border);
+		background: var(--panel);
+		color: var(--text);
+		border-radius: 8px;
+		padding: 6px 0;
+		font-size: 0.8rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-align: center;
+		cursor: pointer;
+	}
+ 
+	.lang-btn.active {
+		background: var(--primary-active);
+		color: var(--ink);
+		border-color: var(--amber);
 	}
 </style>

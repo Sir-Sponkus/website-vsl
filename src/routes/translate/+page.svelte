@@ -9,6 +9,7 @@ import {
 } from '@mediapipe/tasks-vision';
 import {goto} from '$app/navigation';
 import {asset} from '$app/paths';
+import {i18n} from '$lib/i18n/i18n.svelte';
 
 
 const TARGET_FRAMES = 60;
@@ -96,7 +97,7 @@ async function toggleDetection() {
 		if (appState.input === 'video' && videoElement) {
 			videoElement.pause();
 		}
-		appState.prediction = 'Analyzing sign...';
+		appState.prediction = i18n.t.analyzingSign;
 		await runInferenceForWindow();
 		rawFrameBuffer.length = 0;
 		return;
@@ -119,7 +120,7 @@ async function toggleDetection() {
 
 function startCountdown() {
 	appState.countdown = 3;
-	appState.prediction = `Starting in ${appState.countdown}...`;
+	appState.prediction = i18n.t.startingIn(appState.countdown);
 
 	countdownTimer = setInterval(() => {
 		appState.countdown -= 1;
@@ -129,7 +130,7 @@ function startCountdown() {
 			appState.countdown = 0;
 			beginRecording();
 		} else {
-			appState.prediction = `Starting in ${appState.countdown}...`;
+			appState.prediction = i18n.t.startingIn(appState.countdown);
 		}
 	}, 1000);
 }
@@ -140,7 +141,7 @@ function cancelCountdown() {
 		countdownTimer = null;
 	}
 	appState.countdown = 0;
-	appState.prediction = '—';
+	appState.prediction = i18n.t.dash;
 }
 
 function beginRecording() {
@@ -148,7 +149,7 @@ function beginRecording() {
 	lastCaptureTime = 0;
 	recordingStartTime = performance.now();
 	appState.isDetecting = true;
-	appState.prediction = 'Recording gesture...';
+	appState.prediction = i18n.t.recordingGesture;
 	appState.topPredictions = [];
 }
 
@@ -452,7 +453,7 @@ function getTopKPredictions(logits: Float32Array, labelsList: string[], k: numbe
 
 async function runInferenceForWindow() {
 	if (!session || rawFrameBuffer.length < 10) {
-		appState.prediction = 'Sequence too short';
+		appState.prediction = i18n.t.sequenceTooShort;
 		return;
 	}
 
@@ -474,10 +475,10 @@ async function runInferenceForWindow() {
 
 		const topPredictions = getTopKPredictions(outputData, labels, 5);
 		appState.topPredictions = topPredictions;
-		appState.prediction = topPredictions[0]?.label ?? 'Unknown';
+		appState.prediction = topPredictions[0]?.label ?? i18n.t.unknown;
 	} catch (err) {
 		console.error('Inference error:', err);
-		appState.prediction = 'Error analyzing sign';
+		appState.prediction = i18n.t.errorAnalyzing;
 	} finally {
 		appState.isLoading = false;
 	}
@@ -591,7 +592,7 @@ async function handleModeChange(newMode: 'camera' | 'video') {
 			videoElement.srcObject = null;
 			videoElement.src = '';
 		}
-		appState.videoFile = 'No video selected';
+		appState.videoFile = i18n.t.noVideoSelected;
 	}
 }
 
@@ -605,7 +606,7 @@ function handleVideoUpload(event: Event) {
 
 	rawFrameBuffer = [];
 	appState.topPredictions = [];
-	appState.prediction = '—';
+	appState.prediction = i18n.t.dash;
 	appState.isDetecting = false;
 
 	if (canvasCtx && canvasElement) {
@@ -705,7 +706,7 @@ async function handleModelUpload(event: Event) {
 		
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
-		alert(`Failed to load ONNX model: ${errorMessage}`);
+		alert(i18n.t.failedModelAlert(errorMessage));
 	} finally {
 		appState.isLoading = false;
 	}
@@ -721,14 +722,14 @@ async function handleLabelsUpload(event: Event) {
 		const parsed = JSON.parse(text);
 
 		if (!Array.isArray(parsed)) {
-			alert('Invalid format! The JSON file must be an array of strings, e.g. ["hello", "world"]');
+			alert(i18n.t.invalidFormatAlert);
 			return;
 		}
 
 		labels = parsed;
 		labelStatus = `${file.name} (${labels.length} words loaded)`;
 	} catch (err) {
-		alert('Failed to parse JSON file. Please check for valid JSON syntax.');
+		alert(i18n.t.failedParseAlert);
 		console.error(err);
 	}
 }
@@ -746,7 +747,7 @@ async function handleLabelsUpload(event: Event) {
 					class:active={appState.input === 'camera'}
 					onclick={() => handleModeChange('camera')}
 				>
-					Camera
+					{i18n.t.camera}
 				</button>
 				<button
 					type="button"
@@ -754,13 +755,13 @@ async function handleLabelsUpload(event: Event) {
 					class:active={appState.input === 'video'}
 					onclick={() => handleModeChange('video')}
 				>
-					Video file
+					{i18n.t.videoFile}
 				</button>
 			</div>
 
 			{#if appState.input === 'video'}
 				<div class="field">
-					<label for="video-input"><strong>Upload Video File (.mp4, .webm):</strong></label>
+					<label for="video-input"><strong>{i18n.t.uploadLabel}</strong></label>
 					<input
 						id="video-input"
 						type="file"
@@ -768,7 +769,7 @@ async function handleLabelsUpload(event: Event) {
 						onchange={handleVideoUpload}
 					/>
 					<p class="status">
-						Video Status: <strong>{appState.videoFile}</strong>
+						{i18n.t.videoStatus} <strong>{appState.videoFile}</strong>
 					</p>
 				</div>
 			{/if}
@@ -796,7 +797,7 @@ async function handleLabelsUpload(event: Event) {
 
 			<div class="controls-row">
 				<div class="detected-box">
-					Detected Sign: <strong>{appState.prediction}</strong>
+					{i18n.t.detectedSign} <strong>{appState.prediction}</strong>
 				</div>
 
 				<button
@@ -805,26 +806,26 @@ async function handleLabelsUpload(event: Event) {
 					class:active={appState.isDetecting}
 					onclick={toggleDetection}
 				>
-					{appState.isDetecting ? 'Stop Detection' : 'Start Detection'}
+					{appState.isDetecting ? i18n.t.stopDetection : i18n.t.startDetection}
 				</button>
 			</div>
 		</div>
 
 		<div class="panel small-one">
 			<div class="header-row">
-				<h2>Top predictions</h2>
+				<h2>{i18n.t.topPredictions}</h2>
 			</div>
 
 			{#if appState.topPredictions.length === 0}
-				<p class="muted">Waiting for frames...</p>
+				<p class="muted">{i18n.t.waitingFrames}</p>
 			{:else}
 				<div class="predictions-wrap">
 					<table class="predictions-table">
 						<thead>
 							<tr>
-								<th>Ranking</th>
-								<th>Label</th>
-								<th>Confidence</th>
+								<th>{i18n.t.ranking}</th>
+								<th>{i18n.t.label}</th>
+								<th>{i18n.t.confidence}</th>
 							</tr>
 						</thead>
 						<tbody>

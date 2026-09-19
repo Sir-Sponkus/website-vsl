@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { asset, resolve } from '$app/paths';
+	import { i18n } from '$lib/i18n/i18n.svelte';
 
 	function goTranslate() {
-		goto(resolve('/translate/'));
+		goto(resolve('/translate'));
 	}
 
 	function goLearn() {
-		goto(resolve('/learn/'));
+		goto(resolve('/learn'));
 	}
 </script>
 
@@ -15,26 +16,26 @@
 	<section class="hero">
 		<img src={asset('/images/vslink.svg')} alt="vslink" width=50% height="auto" />
 		<div class="tagline">
-			An AI-powered tool that helps you <span class="accent">learn</span> and <span class="accent">translate</span> Vietnamese Sign Language in <span class="accent">real-time</span>.
+			{i18n.t.heroTagline.before}<span class="accent">{i18n.t.heroTagline.learn}</span>{i18n.t.heroTagline.and}<span class="accent">{i18n.t.heroTagline.translate}</span>{i18n.t.heroTagline.mid}<span class="accent">{i18n.t.heroTagline.realtime}</span>{i18n.t.heroTagline.after}
 		</div>
 		<div class="button-row">
-			<button class="primary-btn" onclick={goLearn}>Learn</button>
-			<button class="secondary-btn" onclick={goTranslate}>Translate</button>
+			<button class="primary-btn" onclick={goLearn}>{i18n.t.learnButton}</button>
+			<button class="secondary-btn" onclick={goTranslate}>{i18n.t.translateButton}</button>
 		</div>
 	</section>
 
 	<section class="features">
 		<div class="feature-card">
-			<h3>Practice words</h3>
-			<p>Choose from a dictionary of sign words and get feedback on hand placement and motion.</p>
+			<h3>{i18n.t.featurePracticeTitle}</h3>
+			<p>{i18n.t.featurePracticeBody}</p>
 		</div>
 		<div class="feature-card">
-			<h3>Live recognition</h3>
-			<p>Use your camera to test signs and view model predictions in real time.</p>
+			<h3>{i18n.t.featureLiveTitle}</h3>
+			<p>{i18n.t.featureLiveBody}</p>
 		</div>
 		<div class="feature-card">
-			<h3>Feedback-first</h3>
-			<p>See where to improve: hand height, spacing, finger spread, motion, and openness.</p>
+			<h3>{i18n.t.featureFeedbackTitle}</h3>
+			<p>{i18n.t.featureFeedbackBody}</p>
 		</div>
 	</section>
 </main>

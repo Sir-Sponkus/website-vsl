@@ -5,7 +5,8 @@
     import { classifyFrames } from '$lib/sign-recognition/pipeline';
     import { detectFrame } from '$lib/sign-recognition/frameCapture';
     import * as ort from 'onnxruntime-web/webgpu';
-    import { asset, resolve } from '$app/paths';
+    import { asset } from '$app/paths';
+    import { i18n } from '$lib/i18n/i18n.svelte';
 
 	type PracticeStatus = 'idle' | 'countdown' | 'recording' | 'analyzing' | 'success' | 'error';
 
@@ -28,7 +29,7 @@
 		error: '',
 		score: 0,
 		confidence: 0,
-		feedback: 'Select a word, start the camera, and try the sign.',
+		feedback: String(i18n.t.defaultFeedback),
 		resultSummary: '',
 		issues: [] as Array<{ title: string; message: string; severity: string }>
 	});
@@ -42,7 +43,6 @@
 	let cameraStream: MediaStream | null = null;
 	let animationFrameId: number | null = null;
 	let countdownTimer: ReturnType<typeof setInterval> | null = null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let captureFrames: import('$lib/sign-recognition/pipeline').CapturedFrame[] = [];
 	let lastCaptureAt = 0;
 
@@ -74,18 +74,28 @@
 
 	async function loadWordCatalog() {
         try {
-            const response = await fetch(asset('/spoter/labels.json'));
+            const [labelsResponse, videosResponse] = await Promise.all([
+                fetch(asset('/spoter/labels.json')),
+                fetch(asset('/spoter/videos.json'))
+            ]);
 
-            if (!response.ok) {
-                throw new Error(`Failed to load labels: ${response.status}`);
+            if (!labelsResponse.ok) {
+                throw new Error(`Failed to load labels: ${labelsResponse.status}`);
             }
 
-            const labels = (await response.json()) as string[];
+            const labels = (await labelsResponse.json()) as string[];
+
+            // Map of word label -> video URL, e.g. { "xin chào": "/spoter/videos/xin-chao.mp4" }.
+            // Falls back to an empty map if the file is missing, so a word with no
+            // entry just shows the "no reference video" placeholder instead of erroring.
+            const videoMap: Record<string, string> = videosResponse.ok
+                ? await videosResponse.json()
+                : {};
 
             appState.words = labels.map((label, index) => ({
                 id: String(index + 1),
                 label,
-                videoUrl: '',
+                videoUrl: videoMap[label] ? asset(videoMap[label]) : '',
                 difficulty: index % 5 === 0 ? 'hard' : index % 3 === 0 ? 'medium' : 'easy'
             }));
 
@@ -94,7 +104,7 @@
             }
         } catch (error) {
             console.error('Word list could not be loaded:', error);
-            appState.error = 'The full word list could not be loaded.';
+            appState.error = i18n.t.wordListLoadError;
             appState.words = [];
         }
     }
@@ -154,11 +164,10 @@
             appState.modelReady = true;
             appState.error = session
                 ? ''
-                : 'Landmarkers are ready, but the ONNX model could not be loaded.';
+                : i18n.t.modelLoadedButOnnxFailed;
         } catch (error) {
             console.error(error);
-            appState.error =
-                'Recognition setup failed. Check model assets and use a supported browser.';
+            appState.error = i18n.t.recognitionSetupFailed;
         }
     }
 
@@ -189,7 +198,7 @@
 			startLoop();
 		} catch (error) {
 			console.error(error);
-			appState.error = 'Camera permission was denied or is unavailable.';
+			appState.error = i18n.t.cameraPermissionError;
 			appState.cameraReady = false;
 		}
 	}
@@ -267,7 +276,7 @@
 		appState.status = 'recording';
 		appState.resultSummary = '';
 		appState.issues = [];
-		appState.feedback = 'Recording your attempt...';
+		appState.feedback = i18n.t.recordingFeedback;
 	}
 
 	function averageMetrics() {
@@ -288,6 +297,7 @@
         const average = <K extends keyof ReturnType<typeof buildMetricsFromLandmarks>>(
             key: K
         ) => metrics.reduce((sum, value) => sum + Number(value[key]), 0) / metrics.length;
+		
 
         return {
             shoulderWidth: average('shoulderWidth'),
@@ -305,13 +315,12 @@
 	async function stopAndAnalyze() {
         if (!appState.selectedWord || captureFrames.length < 10) {
             appState.status = 'error';
-            appState.feedback =
-                'Record a little longer with both hands visible before checking.';
+            appState.feedback = i18n.t.recordLongerError;
             return;
         }
 
         appState.status = 'analyzing';
-        appState.feedback = 'Running the sign recognition model...';
+        appState.feedback = i18n.t.runningModel;
 
         try {
             const predictions = session
@@ -353,28 +362,26 @@
             appState.issues = geometricResult.issues;
 
             if (!session) {
-                appState.resultSummary =
-                    'Geometric feedback only — the recognition model is unavailable.';
-                appState.feedback =
-                    'The model could not be loaded, so this result is only an approximate geometry check.';
+                appState.resultSummary = i18n.t.geometricOnlySummary;
+                appState.feedback = i18n.t.geometricOnlyFeedback;
                 appState.status = 'success';
                 return;
             }
 
             if (modelMatchesSelectedWord && modelConfidence >= 0.6) {
-                appState.resultSummary = 'Correct sign detected.';
+                appState.resultSummary = i18n.t.correctSignSummary;
                 appState.feedback =
-                    `The model recognized “${appState.selectedWord}”. ` +
+                    i18n.t.recognizedFeedback(appState.selectedWord) +
                     geometricResult.feedback.join(' ');
             } else if (modelConfidence >= 0.25) {
-                appState.resultSummary = 'Close to the selected sign.';
+                appState.resultSummary = i18n.t.closeSignSummary;
                 appState.feedback =
-                    `The model was close, but it predicted “${topPrediction?.label ?? 'another sign'}”. ` +
+                    i18n.t.closeFeedback(topPrediction?.label ?? i18n.t.anotherSign) +
                     geometricResult.feedback.join(' ');
             } else {
-                appState.resultSummary = 'Needs improvement.';
+                appState.resultSummary = i18n.t.needsImprovementSummary;
                 appState.feedback =
-                    `The model did not confidently recognize “${appState.selectedWord}”. ` +
+                    i18n.t.notRecognizedFeedback(appState.selectedWord) +
                     geometricResult.feedback.join(' ');
             }
 
@@ -382,8 +389,7 @@
         } catch (error) {
             console.error('Practice analysis failed:', error);
             appState.status = 'error';
-            appState.feedback =
-                'The sign could not be analyzed. Try recording again with your full upper body and both hands visible.';
+            appState.feedback = i18n.t.analysisFailed;
         }
     }
 
@@ -394,7 +400,7 @@
 		appState.score = 0;
 		appState.confidence = 0;
 		appState.resultSummary = '';
-		appState.feedback = 'Select a word, start the camera, and try the sign.';
+		appState.feedback = i18n.t.defaultFeedback;
 		appState.issues = [];
 	}
 
@@ -414,17 +420,17 @@
 	<section class="shell">
 		<div class="panel">
 			<div class="header-row">
-				<h1>Learn a sign</h1>
+				<h1>{i18n.t.learnTitle}</h1>
 			</div>
 
 			<div class="word-picker" bind:this={wordPickerEl}>
-				<label for="word-search">Word</label>
+				<label for="word-search">{i18n.t.wordLabel}</label>
 				<div class="combobox">
 					<input
 						id="word-search"
 						type="text"
 						bind:value={appState.search}
-						placeholder={appState.selectedWord || 'Search a Vietnamese sign word...'}
+						placeholder={appState.selectedWord || i18n.t.searchPlaceholder}
 						onfocus={() => (appState.dropdownOpen = true)}
 						oninput={() => (appState.dropdownOpen = true)}
 					/>
@@ -432,7 +438,7 @@
 					{#if appState.dropdownOpen}
 						<div class="dropdown">
 							{#if filteredWords.length === 0}
-								<p class="muted">No words match your search.</p>
+								<p class="muted">{i18n.t.noWordsMatch}</p>
 							{:else}
 								{#each filteredWords as word (word.label)}
 									<button
@@ -452,8 +458,8 @@
 
 		<div class="panel">
 			<div class="selected-word">
-				<span class="label">Current word</span>
-				<h2>{appState.selectedWord || 'Pick a word'}</h2>
+				<span class="label">{i18n.t.currentWord}</span>
+				<h2>{appState.selectedWord || i18n.t.pickWord}</h2>
 			</div>
 
 			<div class="reference-box">
@@ -462,9 +468,9 @@
 					<video controls playsinline src={selectedWordData()?.videoUrl}></video>
 				{:else}
 					<div class="placeholder">
-						<p>No reference video available yet for this word.</p>
+						<p>{i18n.t.noReferenceVideo}</p>
 						<p class="muted">
-							This repo includes the word list but not every video asset. The learning flow still works with live camera feedback.
+							{i18n.t.noReferenceVideoHint}
 						</p>
 					</div>
 				{/if}
@@ -481,7 +487,7 @@
 					disabled={!appState.modelReady || !appState.cameraReady}
 					onclick={startCountdown}
 				>
-					{appState.status === 'recording' ? 'Recording...' : 'Start practice'}
+					{appState.status === 'recording' ? i18n.t.recordingEllipsis : i18n.t.startPractice}
 				</button>
 
 				<button
@@ -490,14 +496,14 @@
 					disabled={appState.status !== 'recording'}
 					onclick={stopAndAnalyze}
 				>
-					Stop and check
+					{i18n.t.stopAndCheck}
 				</button>
 
-				<button type="button" class="ghost" onclick={resetPractice}>Reset</button>
+				<button type="button" class="ghost" onclick={resetPractice}>{i18n.t.reset}</button>
 			</div>
 
 			{#if appState.status === 'countdown'}
-				<div class="countdown">Starting in {appState.countdown}</div>
+				<div class="countdown">{i18n.t.startingInCountdown(appState.countdown)}</div>
 			{/if}
 
 			{#if appState.error}
@@ -511,7 +517,7 @@
 						<span>{appState.resultSummary}</span>
 					</div>
 
-					<p class="confidence">Confidence: {Math.round(appState.confidence * 100)}%</p>
+					<p class="confidence">{i18n.t.confidenceLabel(Math.round(appState.confidence * 100))}</p>
 
 					{#if appState.issues.length > 0}
 						<ul>
@@ -632,8 +638,8 @@
     }
 
     .dropdown button.selected {
-        background: var(--primary-hover);
-        border-color: var(--primary-active);
+        background: var(--amber);
+        border-color: var(--amber-2);
         color: var(--ink);
     }
 
@@ -649,6 +655,10 @@
     .camera-box {
         background: var(--panel-alt);
         border: 1px solid var(--panel-border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
     }
 
     .primary {
@@ -698,11 +708,20 @@
 		min-height: 240px;
 	}
 
-	.reference-box video,
+	.reference-box video {
+		display: block;
+		max-width: 100%;
+		max-height: 100%;
+		width: auto;
+		height: auto;
+		object-fit: contain;
+	}
+
 	.camera-box video {
 		display: block;
 		width: 100%;
-		padding: 100px;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.placeholder {
