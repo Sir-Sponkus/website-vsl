@@ -218,6 +218,5 @@ export async function classifyFrames(
 			label: labels[index] ?? `Class ${index}`,
 			confidence
 		}))
-		.sort((left, right) => right.confidence - left.confidence)
-		.slice(0, 5);
+		.sort((left, right) => right.confidence - left.confidence);
 }

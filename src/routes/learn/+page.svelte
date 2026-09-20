@@ -325,9 +325,14 @@
                 : [];
 
             const topPrediction = predictions[0];
+            const normalize = (value: string) => value.trim().toLowerCase();
             const selectedPrediction = predictions.find(
-                (prediction) => prediction.label === appState.selectedWord
+                (prediction) => normalize(prediction.label) === normalize(appState.selectedWord)
             );
+
+            const modelMatchesSelectedWord =
+                topPrediction !== undefined &&
+                normalize(topPrediction.label) === normalize(appState.selectedWord);
 
             const averaged = averageMetrics();
 
@@ -339,9 +344,6 @@
                 averaged,
                 appState.selectedWord
             );
-
-            const modelMatchesSelectedWord =
-                topPrediction?.label === appState.selectedWord;
 
             const modelConfidence = selectedPrediction?.confidence ?? 0;
 
@@ -361,6 +363,7 @@
             if (!session) {
                 appState.resultSummary = i18n.t.geometricOnlySummary;
                 appState.feedback = i18n.t.geometricOnlyFeedback;
+                appState.confidence = geometricResult.confidence;
                 appState.status = 'success';
                 return;
             }
@@ -788,8 +791,6 @@
         margin-bottom: 12px;
     }
 
-    /* Neutral by default — this shows every status message, not just errors,
-       so it should read as calm guidance rather than a permanent warning. */
     .feedback {
         background: var(--panel-alt);
         color: var(--text);
