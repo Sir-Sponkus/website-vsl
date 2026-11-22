@@ -4,6 +4,11 @@
 	let { children } = $props();
 	import { asset, resolve } from '$app/paths';
 
+	// Keep <html lang> in sync with the selected language.
+	$effect(() => {
+		document.documentElement.lang = i18n.lang;
+	});
+
 
 
 </script>
@@ -15,10 +20,13 @@
 
 <nav class="top-nav" aria-label="Main navigation">
 	<div class="nav-inner">
-		<a href={resolve('/')} class="nav-brand"><img src={asset('/images/vslink.svg')} alt="vslink" width="100" height="auto" /></a>
+		<a href={resolve('/')} class="nav-brand"><img src={asset('/images/vslink.svg')} alt="vslink" /></a>
 		<div class="nav-links">
 			<a href={resolve('/learn')}>{i18n.t.learnButton}</a>
+			<a href={resolve('/lessons')}>{i18n.t.navLessons}</a>
+			<a href={resolve('/quiz')}>{i18n.t.navQuiz}</a>
 			<a href={resolve('/translate')}>{i18n.t.translateButton}</a>
+			<a href={resolve('/about')}>{i18n.t.navAbout}</a>
 		</div>
 		<div class="lang-switch">
 			<button
@@ -59,9 +67,16 @@
 		margin: 0 auto;
 		padding: 14px 20px;
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 10px 16px;
+	}
+
+	.nav-brand img {
+		display: block;
+		width: 100px;
+		height: auto;
 	}
 
 	.nav-brand {
@@ -74,8 +89,9 @@
 
 	.nav-links {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 14px;
+		gap: 4px 14px;
 	}
 
 	.nav-links a {
@@ -87,15 +103,11 @@
 	}
 
 	.nav-links a:hover {
-		background: rgba(199, 158, 55, 0.12);
-		color: var(--primary);
+		background: var(--primary-soft);
+		color: var(--primary-hover);
 	}
 
 	.lang-switch {
-		position: fixed;
-		top: 12px;
-		right: 20px;
-		z-index: 50;
 		display: flex;
 		gap: 6px;
 	}
@@ -114,9 +126,37 @@
 		cursor: pointer;
 	}
  
+	.lang-btn:hover:not(.active) {
+		border-color: var(--primary);
+		color: var(--primary-hover);
+	}
+
 	.lang-btn.active {
 		background: var(--primary-active);
 		color: var(--ink);
 		border-color: var(--amber);
+	}
+
+	@media (max-width: 560px) {
+		.nav-inner {
+			padding: 10px 14px;
+			gap: 8px 10px;
+		}
+
+		.nav-brand img {
+			width: 80px;
+		}
+
+		/* Brand + language switch share the first row; the links get their own. */
+		.nav-links {
+			order: 3;
+			width: 100%;
+			gap: 2px;
+		}
+
+		.nav-links a {
+			padding: 6px 8px;
+			font-size: 0.9rem;
+		}
 	}
 </style>

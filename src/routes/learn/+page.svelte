@@ -1,24 +1,41 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { FilesetResolver, HandLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision';
-	import { buildMetricsFromLandmarks, evaluatePracticeAttempt } from '$lib/learning/geometricFeedback';
-    import { classifyFrames } from '$lib/sign-recognition/pipeline';
-    import { detectFrame } from '$lib/sign-recognition/frameCapture';
-    import * as ort from 'onnxruntime-web/webgpu';
-    import { asset } from '$app/paths';
-    import { i18n } from '$lib/i18n/i18n.svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { DrawingUtils, HandLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision';
+	import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
+	import type { InferenceSession } from 'onnxruntime-web/webgpu';
+	import { averageMetrics, evaluatePracticeAttempt } from '$lib/learning/geometricFeedback';
+	import type { PracticeIssue } from '$lib/learning/geometricFeedback';
+	import { classifyFrames } from '$lib/sign-recognition/pipeline';
+	import type { CapturedFrame, Prediction } from '$lib/sign-recognition/pipeline';
+	import { englishOf, shuffle, similarTo, topicOf, TOPICS, videoPath, posterPath } from '$lib/learning/lessons';
+	import { dueWords, loadProgress, LEARNED_SCORE, track } from '$lib/learning/progress';
+	import type { Progress } from '$lib/learning/progress';
+	import { referenceFor } from '$lib/learning/reference';
+	import type { Reference } from '$lib/learning/reference';
+	import { detectRaw, framesFromResults } from '$lib/sign-recognition/frameCapture';
+	import { loadLabels, loadModels, monotonicTimestamp } from '$lib/sign-recognition/models';
+	import FireBurst from '$lib/components/FireBurst.svelte';
+	import { asset } from '$app/paths';
+	import { i18n, msg } from '$lib/i18n/i18n.svelte';
+	import type { Msg } from '$lib/i18n/i18n.svelte';
 
 	type PracticeStatus = 'idle' | 'countdown' | 'recording' | 'analyzing' | 'success' | 'error';
 
-	type WordEntry = {
-		id: string;
-		label: string;
-		videoUrl?: string;
-		difficulty?: 'easy' | 'medium' | 'hard';
-	};
+	type WordEntry = { label: string; index: number };
+
+	const MAX_RECORD_DURATION_MS = 10000;
 
 	const appState = $state({
 		words: [] as WordEntry[],
+		// Ordered words for a topic / review / quiz session; empty when browsing freely.
+		queue: [] as string[],
+		quiz: false,
+		quizStreak: 0, // consecutive recognized signs in ?quiz=1
+		progress: { words: {}, days: [] } as Progress,
+		top: [] as Prediction[],
+		refSpeed: 1,
+		refLoop: true,
+		refMirror: false,
 		search: '',
 		selectedWord: '',
 		dropdownOpen: false,
@@ -26,25 +43,39 @@
 		countdown: 0,
 		cameraReady: false,
 		modelReady: false,
-		error: '',
+		modelsLoading: true,
+		recordRemaining: 0,
+		error: null as Msg | null,
 		score: 0,
 		confidence: 0,
-		feedback: String(i18n.t.defaultFeedback),
-		resultSummary: '',
-		issues: [] as Array<{ title: string; message: string; severity: string }>
+		// Stored as message keys so they re-render when the language changes.
+		feedback: [msg('defaultFeedback')] as Msg[],
+		resultSummary: null as Msg | null,
+		issues: [] as PracticeIssue[]
 	});
 
 	let videoElement: HTMLVideoElement | null = null;
+	let refVideo = $state<HTMLVideoElement | null>(null);
+	let learnerCanvas = $state<HTMLCanvasElement | null>(null);
+	let refCanvas = $state<HTMLCanvasElement | null>(null);
+	let replayFrames = $state.raw<CapturedFrame[]>([]);
+	let replayAspect = 4 / 3;
+	let replayMs = 0;
+	let reference = $state<Reference | null>(null);
+	let replayRaf: number | null = null;
+	let canvasElement: HTMLCanvasElement | null = null;
 	let wordPickerEl: HTMLDivElement | null = null;
 	let handLandmarker: HandLandmarker | null = null;
-    let poseLandmarker: PoseLandmarker | null = null;
-    let session: ort.InferenceSession | null = null;
-    let labels: string[] = [];
+	let poseLandmarker: PoseLandmarker | null = null;
+	let session: InferenceSession | null = null;
+	let labels: string[] = [];
+	let drawingUtils: DrawingUtils | null = null;
 	let cameraStream: MediaStream | null = null;
 	let animationFrameId: number | null = null;
 	let countdownTimer: ReturnType<typeof setInterval> | null = null;
-	let captureFrames: import('$lib/sign-recognition/pipeline').CapturedFrame[] = [];
+	let captureFrames: CapturedFrame[] = [];
 	let lastCaptureAt = 0;
+	let recordingStartedAt = 0;
 
 	const filteredWords = $derived(
 		appState.words.filter((word) =>
@@ -52,17 +83,24 @@
 		)
 	);
 
-	onMount(async () => {
+	const feedbackText = $derived(appState.feedback.map((part) => i18n.render(part)).join(''));
+
+	onMount(() => {
 		loadWordCatalog();
+		window.addEventListener('click', handleClickOutside);
+		void init();
+	});
+
+	async function init() {
 		await setupRecognitionPipeline();
 		await startCamera();
-		window.addEventListener('click', handleClickOutside);
-	});
+	}
 
 	onDestroy(() => {
 		if (countdownTimer) clearInterval(countdownTimer);
 		if (animationFrameId) cancelAnimationFrame(animationFrameId);
-		window.removeEventListener('click', handleClickOutside);
+		if (replayRaf) cancelAnimationFrame(replayRaf);
+		if (typeof window !== 'undefined') window.removeEventListener('click', handleClickOutside);
 		stopCamera();
 	});
 
@@ -73,100 +111,45 @@
 	}
 
 	async function loadWordCatalog() {
-        try {
-            const [labelsResponse, videosResponse] = await Promise.all([
-                fetch(asset('/spoter/labels.json')),
-                fetch(asset('/spoter/videos.json'))
-            ]);
+		const wordLabels = await loadLabels();
+		if (wordLabels.length === 0) {
+			appState.error = msg('wordListLoadError');
+			return;
+		}
+		appState.words = wordLabels.map((label, index) => ({ label, index }));
+		appState.progress = loadProgress();
 
-            if (!labelsResponse.ok) {
-                throw new Error(`Failed to load labels: ${labelsResponse.status}`);
-            }
+		// ?topic=<id> | ?review=1 | ?quiz=1 start a session; ?word=<label> preselects a word.
+		const params = new URLSearchParams(location.search);
+		const topic = TOPICS.find((t) => t.id === params.get('topic'));
+		appState.quiz = params.has('quiz');
+		if (topic) appState.queue = Object.keys(topic.words);
+		else if (params.has('review')) appState.queue = dueWords(appState.progress);
+		else if (appState.quiz) appState.queue = shuffle(wordLabels).slice(0, 10);
 
-            const labels = (await labelsResponse.json()) as string[];
-
-            const videoMap: Record<string, string> = videosResponse.ok
-                ? await videosResponse.json()
-                : {};
-
-            appState.words = labels.map((label, index) => ({
-                id: String(index + 1),
-                label,
-                videoUrl: videoMap[label] ? videoMap[label] : '',
-                difficulty: index % 5 === 0 ? 'hard' : index % 3 === 0 ? 'medium' : 'easy'
-            }));
-
-            if (appState.words.length > 0) {
-                appState.selectedWord = appState.words[0].label;
-            }
-        } catch (error) {
-            console.error('Word list could not be loaded:', error);
-            appState.error = i18n.t.wordListLoadError;
-            appState.words = [];
-        }
-    }
+		const wanted = params.get('word');
+		appState.selectedWord =
+			wanted && wordLabels.includes(wanted) ? wanted : (appState.queue[0] ?? wordLabels[0]);
+	}
 
 	async function setupRecognitionPipeline() {
-        try {
-            const vision = await FilesetResolver.forVisionTasks(
-                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
-            );
+		appState.modelsLoading = true;
+		try {
+			const models = await loadModels();
+			poseLandmarker = models.poseLandmarker;
+			handLandmarker = models.handLandmarker;
+			session = models.session;
+			labels = models.labels;
 
-            poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath:
-                        'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-                    delegate: 'GPU'
-                },
-                runningMode: 'VIDEO',
-                numPoses: 1
-            });
-
-            handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath:
-                        'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-                    delegate: 'GPU'
-                },
-                runningMode: 'VIDEO',
-                numHands: 2
-            });
-
-            const modelCandidates = [asset('/spoter/spoter.onnx')];
-
-            for (const modelPath of modelCandidates) {
-                try {
-                    session = await ort.InferenceSession.create(modelPath, {
-                        executionProviders: ['wasm']
-                    });
-                    break;
-                } catch (error) {
-                    console.warn(`Unable to load model from ${modelPath}`, error);
-                }
-            }
-
-            const labelResponse = await fetch(asset('/spoter/labels.json'));
-            if (labelResponse.ok) {
-                const parsed = await labelResponse.json();
-
-                if (Array.isArray(parsed)) {
-                    labels = parsed;
-                }
-            }
-
-            if (!poseLandmarker || !handLandmarker) {
-                throw new Error('Landmarkers did not initialize');
-            }
-
-            appState.modelReady = true;
-            appState.error = session
-                ? ''
-                : i18n.t.modelLoadedButOnnxFailed;
-        } catch (error) {
-            console.error(error);
-            appState.error = i18n.t.recognitionSetupFailed;
-        }
-    }
+			appState.modelReady = true;
+			appState.error = session ? null : msg('modelLoadedButOnnxFailed');
+		} catch (error) {
+			console.error(error);
+			appState.error = msg('recognitionSetupFailed');
+		} finally {
+			appState.modelsLoading = false;
+		}
+	}
 
 	async function startCamera() {
 		try {
@@ -191,11 +174,11 @@
 			}
 
 			appState.cameraReady = true;
-			appState.error = '';
+			if (appState.error?.key === 'cameraPermissionError') appState.error = null;
 			startLoop();
 		} catch (error) {
 			console.error(error);
-			appState.error = i18n.t.cameraPermissionError;
+			appState.error = msg('cameraPermissionError');
 			appState.cameraReady = false;
 		}
 	}
@@ -210,43 +193,84 @@
 		}
 	}
 
+	function clearOverlay() {
+		const ctx = canvasElement?.getContext('2d');
+		if (ctx && canvasElement) ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+	}
+
+	function drawSkeleton(
+		poseResult: ReturnType<typeof detectRaw>['poseResult'],
+		handResult: ReturnType<typeof detectRaw>['handResult']
+	) {
+		if (!canvasElement || !videoElement) return;
+		const ctx = canvasElement.getContext('2d');
+		if (!ctx) return;
+
+		if (videoElement.videoWidth > 0 && canvasElement.width !== videoElement.videoWidth) {
+			canvasElement.width = videoElement.videoWidth;
+			canvasElement.height = videoElement.videoHeight;
+		}
+		if (!drawingUtils) drawingUtils = new DrawingUtils(ctx);
+
+		ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+		for (const landmarks of poseResult.landmarks ?? []) {
+			drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
+				color: '#00FF00',
+				lineWidth: 2
+			});
+			drawingUtils.drawLandmarks(landmarks, { radius: 3, color: '#FF0000' });
+		}
+		for (const landmarks of handResult.landmarks ?? []) {
+			drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
+				color: '#00FFFF',
+				lineWidth: 2
+			});
+			drawingUtils.drawLandmarks(landmarks, { radius: 2, color: '#0000FF' });
+		}
+	}
+
 	function startLoop() {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-        }
+		if (animationFrameId) {
+			cancelAnimationFrame(animationFrameId);
+		}
 
-        const step = () => {
-            if (
-                videoElement &&
-                poseLandmarker &&
-                handLandmarker &&
-                appState.status === 'recording'
-            ) {
-                try {
-                    const now = performance.now();
+		const step = () => {
+			if (videoElement && poseLandmarker && handLandmarker && appState.status === 'recording') {
+				const now = performance.now();
+				const elapsed = now - recordingStartedAt;
 
-                    if (now - lastCaptureAt >= 1000 / 30) {
-                        lastCaptureAt = now;
+				appState.recordRemaining = Math.max(
+					0,
+					Math.ceil((MAX_RECORD_DURATION_MS - elapsed) / 1000)
+				);
 
-                        captureFrames.push(
-                            detectFrame(
-                                videoElement,
-                                poseLandmarker,
-                                handLandmarker,
-                                now
-                            )
-                        );
-                    }
-                } catch (error) {
-                    console.error('Recognition capture error:', error);
-                }
-            }
+				if (elapsed >= MAX_RECORD_DURATION_MS) {
+					// Same as pressing "Stop and check".
+					void stopAndAnalyze();
+				} else if (now - lastCaptureAt >= 1000 / 30) {
+					try {
+						lastCaptureAt = now;
 
-            animationFrameId = requestAnimationFrame(step);
-        };
+						const { poseResult, handResult } = detectRaw(
+							videoElement,
+							poseLandmarker,
+							handLandmarker,
+							monotonicTimestamp(now)
+						);
+						drawSkeleton(poseResult, handResult);
+						captureFrames.push(framesFromResults(poseResult, handResult));
+					} catch (error) {
+						console.error('Recognition capture error:', error);
+					}
+				}
+			}
 
-        animationFrameId = requestAnimationFrame(step);
-    }
+			animationFrameId = requestAnimationFrame(step);
+		};
+
+		animationFrameId = requestAnimationFrame(step);
+	}
 
 	function startCountdown() {
 		if (!appState.selectedWord) return;
@@ -270,138 +294,122 @@
 	function beginRecording() {
 		captureFrames = [];
 		lastCaptureAt = 0;
+		recordingStartedAt = performance.now();
+		appState.recordRemaining = Math.ceil(MAX_RECORD_DURATION_MS / 1000);
 		appState.status = 'recording';
-		appState.resultSummary = '';
+		appState.resultSummary = null;
 		appState.issues = [];
-		appState.feedback = i18n.t.recordingFeedback;
+		appState.feedback = [msg('recordingFeedback')];
 	}
 
-	function averageMetrics() {
-        const metrics = captureFrames
-            .map((frame) =>
-                buildMetricsFromLandmarks(
-                    frame.pose,
-                    frame.leftHand,
-                    frame.rightHand
-                )
-            )
-            .filter((value): value is NonNullable<typeof value> => value !== null);
-
-        if (metrics.length === 0) {
-            return null;
-        }
-
-        const average = <K extends keyof ReturnType<typeof buildMetricsFromLandmarks>>(
-            key: K
-        ) => metrics.reduce((sum, value) => sum + Number(value[key]), 0) / metrics.length;
-		
-
-        return {
-            shoulderWidth: average('shoulderWidth'),
-            leftHandY: average('leftHandY'),
-            rightHandY: average('rightHandY'),
-            handGap: average('handGap'),
-            leftSpread: average('leftSpread'),
-            rightSpread: average('rightSpread'),
-            leftOpen: average('leftOpen'),
-            rightOpen: average('rightOpen'),
-            confidence: average('confidence')
-        };
-    }
-
 	async function stopAndAnalyze() {
-        if (!appState.selectedWord || captureFrames.length < 10) {
-            appState.status = 'error';
-            appState.feedback = i18n.t.recordLongerError;
-            return;
-        }
+		if (appState.status !== 'recording') return;
 
-        appState.status = 'analyzing';
-        appState.feedback = i18n.t.runningModel;
+		clearOverlay();
 
-        try {
-            const predictions = session
-                ? await classifyFrames(session, captureFrames, labels)
-                : [];
+		if (!appState.selectedWord || captureFrames.length < 10) {
+			appState.status = 'error';
+			appState.feedback = [msg('recordLongerError')];
+			return;
+		}
 
-            const topPrediction = predictions[0];
-            const normalize = (value: string) => value.trim().toLowerCase();
-            const selectedPrediction = predictions.find(
-                (prediction) => normalize(prediction.label) === normalize(appState.selectedWord)
-            );
+		appState.status = 'analyzing';
+		appState.feedback = [msg('runningModel')];
+		replayFrames = captureFrames;
+		replayMs = performance.now() - recordingStartedAt;
+		replayAspect = (videoElement?.videoWidth ?? 4) / (videoElement?.videoHeight || 3) || 4 / 3;
 
-            const modelMatchesSelectedWord =
-                topPrediction !== undefined &&
-                normalize(topPrediction.label) === normalize(appState.selectedWord);
+		try {
+			const predictions = session ? await classifyFrames(session, captureFrames, labels) : [];
 
-            const averaged = averageMetrics();
+			const topPrediction = predictions[0];
+			const normalize = (value: string) => value.trim().toLowerCase();
+			const selectedPrediction = predictions.find(
+				(prediction) => normalize(prediction.label) === normalize(appState.selectedWord)
+			);
 
-            if (!averaged) {
-                throw new Error('No valid landmark metrics were captured.');
-            }
+			const modelMatchesSelectedWord =
+				topPrediction !== undefined &&
+				normalize(topPrediction.label) === normalize(appState.selectedWord);
 
-            const geometricResult = evaluatePracticeAttempt(
-                averaged,
-                appState.selectedWord
-            );
+			const averaged = averageMetrics(captureFrames, replayAspect);
 
-            const modelConfidence = selectedPrediction?.confidence ?? 0;
+			if (!averaged) {
+				throw new Error('No valid landmark metrics were captured.');
+			}
 
-            const score = modelMatchesSelectedWord
-                ? Math.round(Math.max(geometricResult.score, modelConfidence * 100))
-                : Math.round(
-                        Math.min(
-                            geometricResult.score,
-                            Math.max(0, modelConfidence * 100)
-                        )
-                    );
+			// Null on failure: practice then falls back to the visibility-only check.
+			const entry = selectedWordData();
+			reference = entry ? await referenceFor(entry.label, videoPath(entry.index)) : null;
 
-            appState.score = score;
-            appState.confidence = modelConfidence;
-            appState.issues = geometricResult.issues;
+			const geometricResult = evaluatePracticeAttempt(averaged, reference?.metrics);
 
-            if (!session) {
-                appState.resultSummary = i18n.t.geometricOnlySummary;
-                appState.feedback = i18n.t.geometricOnlyFeedback;
-                appState.confidence = geometricResult.confidence;
-                appState.status = 'success';
-                return;
-            }
+			const modelConfidence = selectedPrediction?.confidence ?? 0;
 
-            if (modelMatchesSelectedWord && modelConfidence >= 0.6) {
-                appState.resultSummary = i18n.t.correctSignSummary;
-                appState.feedback =
-                    i18n.t.recognizedFeedback(appState.selectedWord) +
-                    geometricResult.feedback.join(' ');
-            } else if (modelConfidence >= 0.25) {
-                appState.resultSummary = i18n.t.closeSignSummary;
-                appState.feedback =
-                    i18n.t.closeFeedback(topPrediction?.label ?? i18n.t.anotherSign) +
-                    geometricResult.feedback.join(' ');
-            } else {
-                appState.resultSummary = i18n.t.needsImprovementSummary;
-                appState.feedback =
-                    i18n.t.notRecognizedFeedback(appState.selectedWord) +
-                    geometricResult.feedback.join(' ');
-            }
+			// With a model, its confidence in the selected word is the score (capped by the
+			// visibility check). Without one, only the visibility score is available.
+			const score = session
+				? Math.round(Math.min(geometricResult.score, modelConfidence * 100))
+				: geometricResult.score;
 
-            appState.status = 'success';
-        } catch (error) {
-            console.error('Practice analysis failed:', error);
-            appState.status = 'error';
-            appState.feedback = i18n.t.analysisFailed;
-        }
-    }
+			appState.score = score;
+			appState.confidence = modelConfidence;
+			appState.issues = geometricResult.issues;
+			appState.top = predictions.slice(0, 3);
+
+			if (!session) {
+				appState.resultSummary = msg('geometricOnlySummary');
+				appState.feedback = [msg('geometricOnlyFeedback')];
+				appState.confidence = geometricResult.confidence;
+				appState.status = 'success';
+				return;
+			}
+
+			appState.progress = track(appState.selectedWord, score >= LEARNED_SCORE, score);
+
+			const recognized = modelMatchesSelectedWord && modelConfidence >= 0.6;
+			appState.quizStreak = recognized ? appState.quizStreak + 1 : 0;
+
+			if (recognized) {
+				appState.resultSummary = msg('correctSignSummary');
+				appState.feedback = [msg('recognizedFeedback', appState.selectedWord)];
+			} else if (modelConfidence >= 0.25) {
+				appState.resultSummary = msg('closeSignSummary');
+				appState.feedback = [
+					msg('closeFeedback', topPrediction?.label ?? msg('anotherSign'))
+				];
+			} else {
+				appState.resultSummary = msg('needsImprovementSummary');
+				appState.feedback = [msg('notRecognizedFeedback', appState.selectedWord)];
+			}
+
+			appState.status = 'success';
+			await tick();
+			playReplay();
+		} catch (error) {
+			console.error('Practice analysis failed:', error);
+			appState.status = 'error';
+			appState.feedback = [msg('analysisFailed')];
+		}
+	}
 
 	function resetPractice() {
+		if (countdownTimer) {
+			clearInterval(countdownTimer);
+			countdownTimer = null;
+		}
+		clearOverlay();
 		appState.status = 'idle';
 		appState.countdown = 0;
 		captureFrames = [];
 		appState.score = 0;
 		appState.confidence = 0;
-		appState.resultSummary = '';
-		appState.feedback = i18n.t.defaultFeedback;
+		appState.resultSummary = null;
+		appState.feedback = [msg('defaultFeedback')];
 		appState.issues = [];
+		appState.top = [];
+		if (replayRaf) cancelAnimationFrame(replayRaf);
+		reference = null;
 	}
 
 	function handleWordSelect(word: string) {
@@ -413,6 +421,65 @@
 
 	function selectedWordData() {
 		return appState.words.find((item) => item.label === appState.selectedWord) ?? null;
+	}
+
+	const queuePos = $derived(appState.queue.indexOf(appState.selectedWord));
+	const wordData = $derived(selectedWordData());
+	const best = $derived(appState.progress.words[appState.selectedWord]?.best);
+	const similar = $derived(similarTo(appState.selectedWord, appState.words.map((w) => w.label)));
+	const topicName = $derived(topicOf(appState.selectedWord)?.[i18n.lang]);
+
+	function stepQueue(delta: number) {
+		const next = appState.queue[queuePos + delta];
+		if (next) handleWordSelect(next);
+	}
+
+	// Keep the speed on the element: changing src resets playbackRate to defaultPlaybackRate.
+	$effect(() => {
+		if (!refVideo) return;
+		void appState.selectedWord;
+		refVideo.defaultPlaybackRate = appState.refSpeed;
+		refVideo.playbackRate = appState.refSpeed;
+	});
+
+	function drawSequence(canvas: HTMLCanvasElement, frames: CapturedFrame[], t: number) {
+		const ctx = canvas.getContext('2d');
+		if (!ctx || frames.length === 0) return;
+		const frame = frames[Math.min(frames.length - 1, Math.floor(t * frames.length))];
+		const utils = new DrawingUtils(ctx);
+		const seen = (points: CapturedFrame['pose']) => points.some((p) => p.x !== 0 || p.y !== 0);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		const draw = (points: CapturedFrame['pose'], connections: typeof PoseLandmarker.POSE_CONNECTIONS, color: string) => {
+			if (!seen(points)) return;
+			utils.drawConnectors(points as NormalizedLandmark[], connections, { color, lineWidth: 2 });
+			utils.drawLandmarks(points as NormalizedLandmark[], { radius: 2, color });
+		};
+		draw(frame.pose, PoseLandmarker.POSE_CONNECTIONS, '#00FF00');
+		draw(frame.leftHand, HandLandmarker.HAND_CONNECTIONS, '#00FFFF');
+		draw(frame.rightHand, HandLandmarker.HAND_CONNECTIONS, '#FFB000');
+	}
+
+	// Both clips play in real time from the same start and hold their last frame.
+	function playReplay() {
+		if (replayRaf) cancelAnimationFrame(replayRaf);
+		if (!learnerCanvas || replayFrames.length === 0) return;
+		learnerCanvas.width = 320;
+		learnerCanvas.height = Math.round(320 / replayAspect);
+		if (refCanvas && reference) {
+			refCanvas.width = 320;
+			refCanvas.height = Math.round(320 / reference.aspect);
+		}
+		const start = performance.now();
+		const total = Math.max(replayMs, reference?.durationMs ?? 0);
+		const frame = (now: number) => {
+			const elapsed = now - start;
+			if (learnerCanvas) drawSequence(learnerCanvas, replayFrames, Math.min(elapsed / replayMs, 0.999));
+			if (refCanvas && reference) {
+				drawSequence(refCanvas, reference.frames, Math.min(elapsed / reference.durationMs, 0.999));
+			}
+			replayRaf = elapsed < total ? requestAnimationFrame(frame) : null;
+		};
+		replayRaf = requestAnimationFrame(frame);
 	}
 </script>
 
@@ -460,24 +527,86 @@
 			<div class="selected-word">
 				<span class="label">{i18n.t.currentWord}</span>
 				<h2>{appState.selectedWord || i18n.t.pickWord}</h2>
-			</div>
-
-			<div class="reference-box">
-				{#if selectedWordData()?.videoUrl}
-					<!-- svelte-ignore a11y_media_has_caption -->
-					<video controls playsinline src={selectedWordData()?.videoUrl}></video>
-				{:else}
-					<div class="placeholder">
-						<p>{i18n.t.noReferenceVideo}</p>
-						<p class="muted">
-							{i18n.t.noReferenceVideoHint}
-						</p>
+				{#if appState.selectedWord}
+					<p class="meta">
+						{i18n.t.englishLabel}: <strong>{englishOf(appState.selectedWord)}</strong>
+						{#if topicName}· {topicName}{/if}
+						· {best === undefined ? i18n.t.notPracticed : i18n.t.bestScore(best)}
+					</p>
+				{/if}
+				{#if similar.length > 0}
+					<p class="meta">
+						{i18n.t.similarSigns}:
+						{#each similar as other (other)}
+							<button type="button" class="chip" onclick={() => handleWordSelect(other)}>{other}</button>
+						{/each}
+					</p>
+				{/if}
+				{#if appState.queue.length > 1}
+					<div class="status-row queue-nav">
+						<button type="button" class="ghost" disabled={queuePos <= 0} onclick={() => stepQueue(-1)}>
+							{i18n.t.prevWord}
+						</button>
+						<span class="muted" role="status">{i18n.t.queuePosition(queuePos + 1, appState.queue.length)}</span>
+						<button
+							type="button"
+							class="ghost"
+							disabled={queuePos < 0 || queuePos >= appState.queue.length - 1}
+							onclick={() => stepQueue(1)}
+						>
+							{i18n.t.nextWord}
+						</button>
 					</div>
 				{/if}
 			</div>
 
+			<div class="reference-box">
+				{#if appState.quiz && appState.status !== 'success'}
+					<div class="placeholder"><p>{i18n.t.quizSignHidden}</p></div>
+				{:else if wordData}
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<video
+						bind:this={refVideo}
+						class:mirrored={appState.refMirror}
+						controls
+						autoplay
+						muted
+						playsinline
+						loop={appState.refLoop}
+						src={asset(videoPath(wordData.index))}
+						poster={asset(posterPath(wordData.index))}
+						aria-label={i18n.t.refVideoLabel(wordData.label)}
+					></video>
+				{:else}
+					<div class="placeholder">
+						<p>{i18n.t.noReferenceVideo}</p>
+					</div>
+				{/if}
+			</div>
+
+			<div class="status-row ref-controls">
+				<span id="speed-label" class="muted">{i18n.t.speedLabel}</span>
+				<div role="group" aria-labelledby="speed-label" class="speeds">
+					{#each [1, 0.75, 0.5] as speed (speed)}
+						<button
+							type="button"
+							class="ghost"
+							aria-pressed={appState.refSpeed === speed}
+							class:on={appState.refSpeed === speed}
+							onclick={() => (appState.refSpeed = speed)}>{speed}×</button
+						>
+					{/each}
+				</div>
+				<label><input type="checkbox" bind:checked={appState.refLoop} /> {i18n.t.loopLabel}</label>
+				<label><input type="checkbox" bind:checked={appState.refMirror} /> {i18n.t.mirrorLabel}</label>
+			</div>
+
 			<div class="camera-box">
-				<video bind:this={videoElement} muted playsinline autoplay></video>
+				<video bind:this={videoElement} class="mirrored" muted playsinline autoplay></video>
+				<canvas bind:this={canvasElement} class="overlay mirrored"></canvas>
+				{#if appState.status === 'recording'}
+					<div class="rec-indicator">{i18n.t.recordingRemaining(appState.recordRemaining)}</div>
+				{/if}
 			</div>
 
 			<div class="status-row">
@@ -506,25 +635,42 @@
 				<div class="countdown">{i18n.t.startingInCountdown(appState.countdown)}</div>
 			{/if}
 
+			{#if appState.modelsLoading}
+				<div class="loading" role="status">{i18n.t.loadingModels}</div>
+			{/if}
+
 			{#if appState.error}
-				<div class="alert">{appState.error}</div>
+				<div class="alert">{i18n.render(appState.error)}</div>
 			{/if}
 
 			{#if appState.status === 'success'}
 				<div class="result-card">
 					<div class="score-row">
 						<strong>{appState.score}%</strong>
-						<span>{appState.resultSummary}</span>
+						<span>{i18n.render(appState.resultSummary)}</span>
+						{#if appState.quiz && appState.quizStreak >= 2}
+							<span role="img" aria-label={i18n.t.quizStreak(appState.quizStreak)}>🔥 {appState.quizStreak}</span>
+						{/if}
 					</div>
+					{#if appState.quiz && appState.quizStreak > 0}<FireBurst streak={appState.quizStreak} />{/if}
 
 					<p class="confidence">{i18n.t.confidenceLabel(Math.round(appState.confidence * 100))}</p>
 
+					{#if appState.top.length > 0}
+						<p class="meta"><strong>{i18n.t.topGuesses}:</strong></p>
+						<ol class="top">
+							{#each appState.top as guess (guess.index)}
+								<li>{guess.label} <span class="muted">{Math.round(guess.confidence * 100)}%</span></li>
+							{/each}
+						</ol>
+					{/if}
+
 					{#if appState.issues.length > 0}
 						<ul>
-							{#each appState.issues as issue (issue.title + issue.message)}
-								<li>
-									<strong>{issue.title}:</strong>
-									{issue.message}
+								{#each appState.issues as issue (issue.id)}
+									<li>
+										<strong>{i18n.t[issue.titleKey]}:</strong>
+										{i18n.t[issue.messageKey]}
 								</li>
 							{/each}
 						</ul>
@@ -532,8 +678,31 @@
 				</div>
 			{/if}
 
+			{#if appState.status === 'success' && replayFrames.length > 0}
+				<div class="replay">
+					<div class="header-row">
+						<h3>{i18n.t.replayTitle}</h3>
+						<button type="button" class="ghost" onclick={playReplay}>{i18n.t.replayPlay}</button>
+					</div>
+					<div class="replay-grid">
+						<figure>
+							<canvas bind:this={learnerCanvas} aria-label={i18n.t.replayYouLabel}></canvas>
+							<figcaption>{i18n.t.replayYou}</figcaption>
+						</figure>
+						<figure>
+							{#if reference}
+								<canvas bind:this={refCanvas} aria-label={i18n.t.replayRefLabel}></canvas>
+								<figcaption>{i18n.t.replayRef}</figcaption>
+							{:else}
+								<p class="muted">{i18n.t.replayNoRef}</p>
+							{/if}
+						</figure>
+					</div>
+				</div>
+			{/if}
+
 			<div class="feedback">
-				{appState.feedback}
+				{feedbackText}
 			</div>
 		</div>
 	</section>
@@ -554,6 +723,20 @@
 		display: grid;
 		grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
 		gap: 20px;
+	}
+
+	@media (max-width: 800px) {
+		.page {
+			padding: 20px 14px;
+		}
+
+		.shell {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.panel {
+			padding: 14px;
+		}
 	}
 
 	.panel {
@@ -705,7 +888,16 @@
 	}
 
 	.camera-box {
-		min-height: 240px;
+		position: relative;
+		width: 100%;
+		aspect-ratio: 4 / 3;
+		margin-bottom: 14px;
+		border-radius: 12px;
+	}
+
+	.reference-box {
+		margin-bottom: 14px;
+		border-radius: 12px;
 	}
 
 	.reference-box video {
@@ -717,11 +909,42 @@
 		object-fit: contain;
 	}
 
-	.camera-box video {
+	.camera-box video,
+	.camera-box .overlay {
+		position: absolute;
+		inset: 0;
 		display: block;
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+	}
+
+	.camera-box .overlay {
+		pointer-events: none;
+	}
+
+	.camera-box .mirrored {
+		transform: scaleX(-1);
+	}
+
+	.rec-indicator {
+		position: absolute;
+		top: 10px;
+		left: 12px;
+		padding: 4px 10px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.55);
+		color: var(--danger);
+		font: 700 0.95rem/1.2 monospace;
+	}
+
+	.loading {
+		margin-bottom: 12px;
+		padding: 10px 12px;
+		border-radius: 10px;
+		background: var(--panel-alt);
+		border: 1px solid var(--panel-border);
+		color: var(--text-muted);
 	}
 
 	.placeholder {
@@ -784,6 +1007,7 @@
 	}
 
 	.result-card {
+        position: relative;
         background: var(--success-soft);
         border: 1px solid var(--success-border);
         padding: 14px 16px;
@@ -821,6 +1045,94 @@
 		margin: 0;
 		padding-left: 18px;
 		color: var(--text);
+	}
+
+	.meta {
+		margin: 6px 0 0;
+		color: var(--text-muted);
+	}
+
+	.meta strong {
+		color: var(--text);
+	}
+
+	.chip {
+		margin: 2px 4px 2px 0;
+		padding: 2px 10px;
+		border-radius: 999px;
+		border: 1px solid var(--panel-border);
+		background: var(--panel-alt);
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.queue-nav,
+	.ref-controls {
+		align-items: center;
+	}
+
+	.ref-controls label {
+		color: var(--text-muted);
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.ref-controls input {
+		width: auto;
+	}
+
+	.speeds {
+		display: flex;
+		gap: 6px;
+	}
+
+	button.ghost.on {
+		border-color: var(--primary);
+		color: var(--text);
+	}
+
+	.reference-box video.mirrored {
+		transform: scaleX(-1);
+	}
+
+	.top {
+		margin: 0 0 12px;
+		padding-left: 22px;
+	}
+
+	.replay {
+		margin-bottom: 12px;
+	}
+
+	.replay h3 {
+		margin: 0;
+	}
+
+	.replay-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
+	}
+
+	.replay figure {
+		margin: 0;
+	}
+
+	.replay canvas {
+		width: 100%;
+		height: auto;
+		display: block;
+		background: var(--panel-alt);
+		border: 1px solid var(--panel-border);
+		border-radius: 10px;
+		transform: scaleX(-1);
+	}
+
+	.replay figcaption {
+		text-align: center;
+		color: var(--text-muted);
+		margin-top: 4px;
 	}
 
 </style>

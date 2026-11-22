@@ -1,5 +1,6 @@
 :root {
 	--bg: #0c1520;
+	--nav-bg: rgba(12, 21, 32, 0.82);
 	--panel: #12202e;
 	--panel-alt: #182b3c;
 	--panel-border: rgba(148, 180, 209, 0.14);
@@ -7,10 +8,12 @@
 
 	--text: #e9eff6;
 	--text-muted: #8fa3b8;
+	--muted: var(--text-muted);
 
 	--primary: #3680c2;
 	--primary-hover: #4991d1;
 	--primary-active: #2c6aa3;
+	--primary-soft: rgba(54, 128, 194, 0.16);
 	--primary-ink: #08141f;
 
 	--amber: #e0a83f;
@@ -69,4 +72,18 @@ a {
 
 .muted {
 	color: var(--muted);
+}
+
+img {
+	max-width: 100%;
+}
+
+@media (max-width: 800px) {
+	.page {
+		padding: 20px 14px;
+	}
+
+	.shell {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }

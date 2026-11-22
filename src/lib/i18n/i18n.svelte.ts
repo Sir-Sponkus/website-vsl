@@ -44,12 +44,12 @@ const translations = {
 		translateButton: 'Translate',
 		featurePracticeTitle: 'Practice words',
 		featurePracticeBody:
-			'Choose from a dictionary of sign words and get feedback on hand placement and motion.',
+			'Choose from 400 sign words, watch the reference video, and practice in front of your camera.',
 		featureLiveTitle: 'Live recognition',
 		featureLiveBody: 'Use your camera to test signs and view model predictions in real time.',
 		featureFeedbackTitle: 'Feedback-first',
 		featureFeedbackBody:
-			'See where to improve: hand height, spacing, finger spread, motion, and openness.',
+			'See whether the model recognized your sign and whether your hands stayed visible to the camera.',
 
 
 		// Learn
@@ -60,8 +60,6 @@ const translations = {
 		currentWord: 'Current word',
 		pickWord: 'Pick a word',
 		noReferenceVideo: 'No reference video available yet for this word.',
-		noReferenceVideoHint:
-			'This repo includes the word list but not every video asset. The learning flow still works with live camera feedback.',
 		startPractice: 'Start practice',
 		recordingEllipsis: 'Recording...',
 		stopAndCheck: 'Stop and check',
@@ -90,30 +88,107 @@ const translations = {
 			'The sign could not be analyzed. Try recording again with your full upper body and both hands visible.',
 
 		// Feedback
-		issueHeightTitle: 'Hand height',
-		issueHeightMessage:
-			'Your hands are slightly too high or too low. Bring them closer to the shoulder line.',
-		issueSpacingTitle: 'Hand spacing',
-		issueSpacingMessage:
-			'Move your hands closer together or farther apart to better match the target pose.',
-		issueSpreadTitle: 'Finger spread',
-		issueSpreadMessage:
-			'Spread your fingers a little more or relax them so the hand shape is cleaner.',
-		issueOpenTitle: 'Palm opening',
-		issueOpenMessage:
-			'The hand opening is off. Try making the palm clearer and spreading the fingers more evenly.',
 		issueVisibilityTitle: 'Visibility',
 		issueVisibilityMessage:
-			'The model cannot see both hands clearly enough. Move into frame and keep your hands visible.',
-		practicingWord: (word: string) => `You are practicing "${word}".`,
-		feedbackCorrect: 'Nice work — the sign is close to the target form.',
-		feedbackClose:
-			'You are close. Minor adjustments to hand placement and spacing will make the sign cleaner.',
-		feedbackNeedsImprovement:
-			'The sign needs more correction. Focus on hand placement, finger spacing, and palm openness before retrying.',
-		summaryCorrect: 'Good sign shape.',
-		summaryClose: 'Close but still needs fine-tuning.',
-		summaryNeedsImprovement: 'Not quite there yet.'
+			'The camera could not see your hands clearly. Move into frame and keep your hands visible.',
+		loadingModels: 'Loading recognition models...',
+		recordingRemaining: (n: number) => `REC ${n}s`,
+
+		// Navigation
+		navLessons: 'Lessons',
+		navQuiz: 'Quiz',
+		navAbout: 'About',
+
+		// Learn: word card
+		englishLabel: 'English',
+		notPracticed: 'not practiced yet',
+		bestScore: (n: number) => `best ${n}%`,
+		similarSigns: 'Similar signs',
+		prevWord: 'Previous',
+		nextWord: 'Next',
+		queuePosition: (i: number, n: number) => `${i} / ${n}`,
+		quizSignHidden: 'Sign this word from memory. The reference video appears after your attempt.',
+		refVideoLabel: (word: string) => `Reference video: sign for "${word}"`,
+		speedLabel: 'Speed',
+		loopLabel: 'Loop',
+		mirrorLabel: 'Mirror',
+		topGuesses: 'Top 3 guesses',
+		replayTitle: 'Side-by-side replay',
+		replayPlay: 'Replay',
+		replayYou: 'You',
+		replayRef: 'Reference',
+		replayYouLabel: 'Skeleton animation of your attempt',
+		replayRefLabel: 'Skeleton animation of the reference video',
+		replayNoRef: 'The reference could not be analysed, so there is nothing to compare with.',
+
+		// Learn: geometric feedback
+		issueHandCountTitle: 'Number of hands',
+		issueFewerHandsMessage: 'The reference uses both hands, but the camera mostly saw one of yours.',
+		issueMoreHandsMessage: 'The reference uses one hand. Keep your other hand still and out of the way.',
+		issueHeightTitle: 'Hand height',
+		issueHandsLowMessage: 'Your hand is lower than in the reference. Raise it relative to your shoulders.',
+		issueHandsHighMessage: 'Your hand is higher than in the reference. Lower it relative to your shoulders.',
+		issueGapTitle: 'Distance between hands',
+		issueHandsApartMessage: 'Your hands are further apart than in the reference.',
+		issueHandsTogetherMessage: 'Your hands are closer together than in the reference.',
+		issueShapeTitle: 'Hand shape',
+		issueHandClosedMessage: 'Your hand looks more closed than in the reference. Open your fingers more.',
+		issueHandOpenMessage: 'Your hand looks more open than in the reference. Bring your fingers closer together.',
+
+		// Lessons
+		lessonsTitle: 'Lessons',
+		lessonsIntro: 'Pick a topic and practice its words one after another.',
+		streakLabel: (n: number) => (n === 1 ? '1 day streak' : `${n} day streak`),
+		learnedTotal: (n: number, total: number) => `${n} of ${total} words learned`,
+		reviewTitle: 'Review',
+		reviewDue: (n: number) => (n === 1 ? '1 word is due for review.' : `${n} words are due for review.`),
+		reviewNone: 'Nothing is due. Practice some words and they will come back here.',
+		reviewStart: 'Start review',
+		topicProgress: (learned: number, total: number) => `${learned} / ${total} learned`,
+		progressNote:
+			'Progress is saved only in this browser. A word counts as learned at a best score of 60% or more.',
+
+		// Quiz
+		quizTitle: 'Quiz',
+		quizIntro: 'Test yourself in two ways. Results count toward your progress.',
+		quizWatchTitle: 'Watch and choose',
+		quizWatchBody: 'Watch a sign and pick the matching word. No camera needed.',
+		quizSignTitle: 'Read and sign',
+		quizSignBody: 'See a word, sign it to the camera, and get scored. 10 random words.',
+		quizStart: 'Start',
+		quizQuestion: (i: number, n: number) => `Question ${i} of ${n}`,
+		quizWatchPrompt: 'Which word is this sign?',
+		quizOptionsLabel: 'Answer options',
+		quizVideoLabel: 'Reference video of a sign to identify',
+		quizCorrect: 'Correct!',
+		quizStreak: (n: number) => `${n} correct in a row`,
+		quizWrong: (word: string) => `Not quite. The answer is "${word}".`,
+		quizNext: 'Next question',
+		quizFinish: 'See results',
+		quizResult: (score: number, total: number) => `You got ${score} of ${total} right.`,
+		quizAgain: 'Play again',
+		quizLoading: 'Loading words...',
+
+		// About
+		aboutTitle: 'About VSL & Deaf culture',
+		aboutItems: [
+			{
+				h: 'What is Vietnamese Sign Language?',
+				p: 'Vietnamese Sign Language (VSL, Ngôn ngữ ký hiệu Việt Nam) is a visual language used by many Deaf people in Vietnam. It has its own vocabulary and grammar. It is not a word-for-word signed version of spoken Vietnamese, and facial expression and movement carry part of the meaning.'
+			},
+			{
+				h: 'Regional variation',
+				p: 'Signs can differ from region to region, often described as Northern, Central and Southern varieties. The words in this app come from a single set of reference videos, so some signs may differ from what Deaf people near you use. When in doubt, ask local Deaf signers.'
+			},
+			{
+				h: 'Etiquette for hearing learners',
+				p: "To get someone's attention, wave in their line of sight or tap their shoulder lightly. Keep eye contact while they sign instead of looking at your hands or phone. Do not speak for Deaf people or assume what they need; ask them. Be patient, and ask before filming anyone. Whenever you can, learn from Deaf teachers and Deaf community groups, because they are the experts in their own language."
+			},
+			{
+				h: 'About the AI feedback',
+				p: 'The feedback in this app comes from a machine-learning model and simple hand-position checks. It is approximate and can be wrong, for example because of lighting, camera angle or clothing. It does not see facial expressions or mouth movements, which are part of the language. Use it as a practice aid, not as a test of whether you sign correctly.'
+			}
+		],
 	},
 	vi: {
 		// Translate
@@ -156,12 +231,12 @@ const translations = {
 		translateButton: 'Dịch',
 		featurePracticeTitle: 'Luyện tập từ vựng',
 		featurePracticeBody:
-			'Chọn từ danh sách các từ ký hiệu và nhận phản hồi về vị trí và chuyển động của tay.',
+			'Chọn trong 400 từ ký hiệu, xem video mẫu và luyện tập trước camera.',
 		featureLiveTitle: 'Nhận diện trực tiếp',
 		featureLiveBody: 'Dùng camera để thử ký hiệu và xem dự đoán của mô hình theo thời gian thực.',
 		featureFeedbackTitle: 'Ưu tiên phản hồi',
 		featureFeedbackBody:
-			'Xem những gì cần cải thiện: độ cao tay, khoảng cách, độ xòe ngón tay, chuyển động và độ mở.',
+			'Xem mô hình có nhận ra ký hiệu của bạn không và tay bạn có luôn hiện rõ trước camera không.',
 
 		// Learn
 		learnTitle: 'Học một ký hiệu',
@@ -171,8 +246,6 @@ const translations = {
 		currentWord: 'Từ hiện tại',
 		pickWord: 'Chọn một từ',
 		noReferenceVideo: 'Chưa có video mẫu cho từ này.',
-		noReferenceVideoHint:
-			'Kho này bao gồm danh sách từ nhưng không phải video nào cũng có sẵn. Luồng học vẫn hoạt động với phản hồi camera trực tiếp.',
 		startPractice: 'Bắt đầu luyện tập',
 		recordingEllipsis: 'Đang ghi...',
 		stopAndCheck: 'Dừng và kiểm tra',
@@ -202,29 +275,107 @@ const translations = {
 			'Không thể phân tích ký hiệu. Hãy thử ghi lại với toàn bộ phần trên cơ thể và cả hai tay hiện rõ.',
 
 		// Feedback
-		issueHeightTitle: 'Độ cao tay',
-		issueHeightMessage: 'Tay bạn hơi cao hoặc hơi thấp. Hãy đưa tay gần với đường vai hơn.',
-		issueSpacingTitle: 'Khoảng cách tay',
-		issueSpacingMessage:
-			'Di chuyển hai tay lại gần nhau hơn hoặc xa nhau hơn để khớp với tư thế mục tiêu.',
-		issueSpreadTitle: 'Độ xòe ngón tay',
-		issueSpreadMessage:
-			'Xòe ngón tay ra thêm một chút hoặc thả lỏng để hình dạng bàn tay rõ ràng hơn.',
-		issueOpenTitle: 'Độ mở lòng bàn tay',
-		issueOpenMessage:
-			'Độ mở bàn tay chưa đúng. Hãy làm cho lòng bàn tay rõ hơn và xòe ngón tay đều hơn.',
 		issueVisibilityTitle: 'Khả năng nhìn thấy',
 		issueVisibilityMessage:
-			'Mô hình không thể nhìn rõ cả hai tay. Hãy di chuyển vào khung hình và giữ tay luôn hiện rõ.',
-		practicingWord: (word: string) => `Bạn đang luyện tập "${word}".`,
-		feedbackCorrect: 'Làm tốt lắm — ký hiệu gần với hình mẫu mục tiêu.',
-		feedbackClose:
-			'Bạn đã gần đúng. Điều chỉnh nhỏ về vị trí và khoảng cách tay sẽ giúp ký hiệu rõ ràng hơn.',
-		feedbackNeedsImprovement:
-			'Ký hiệu cần được chỉnh sửa nhiều hơn. Hãy tập trung vào vị trí tay, khoảng cách ngón tay và độ mở lòng bàn tay trước khi thử lại.',
-		summaryCorrect: 'Hình dạng ký hiệu tốt.',
-		summaryClose: 'Gần đúng nhưng vẫn cần tinh chỉnh.',
-		summaryNeedsImprovement: 'Chưa đạt được.'
+			'Camera không nhìn rõ tay của bạn. Hãy di chuyển vào khung hình và giữ tay luôn hiện rõ.',
+		loadingModels: 'Đang tải mô hình nhận diện...',
+		recordingRemaining: (n: number) => `GHI ${n}s`,
+
+		// Navigation
+		navLessons: 'Bài học',
+		navQuiz: 'Đố vui',
+		navAbout: 'Giới thiệu',
+
+		// Learn: word card
+		englishLabel: 'Tiếng Anh',
+		notPracticed: 'chưa luyện tập',
+		bestScore: (n: number) => `cao nhất ${n}%`,
+		similarSigns: 'Ký hiệu tương tự',
+		prevWord: 'Trước',
+		nextWord: 'Tiếp',
+		queuePosition: (i: number, n: number) => `${i} / ${n}`,
+		quizSignHidden: 'Hãy ký từ này theo trí nhớ. Video mẫu sẽ hiện sau lần thử của bạn.',
+		refVideoLabel: (word: string) => `Video mẫu: ký hiệu của từ "${word}"`,
+		speedLabel: 'Tốc độ',
+		loopLabel: 'Lặp lại',
+		mirrorLabel: 'Lật gương',
+		topGuesses: '3 dự đoán hàng đầu',
+		replayTitle: 'Xem lại song song',
+		replayPlay: 'Phát lại',
+		replayYou: 'Bạn',
+		replayRef: 'Video mẫu',
+		replayYouLabel: 'Hoạt cảnh khung xương của lần thử của bạn',
+		replayRefLabel: 'Hoạt cảnh khung xương của video mẫu',
+		replayNoRef: 'Không thể phân tích video mẫu nên chưa có gì để so sánh.',
+
+		// Learn: geometric feedback
+		issueHandCountTitle: 'Số lượng tay',
+		issueFewerHandsMessage: 'Video mẫu dùng cả hai tay, nhưng camera chủ yếu chỉ thấy một tay của bạn.',
+		issueMoreHandsMessage: 'Video mẫu chỉ dùng một tay. Hãy để tay còn lại đứng yên và tránh ra.',
+		issueHeightTitle: 'Độ cao của tay',
+		issueHandsLowMessage: 'Tay bạn thấp hơn so với video mẫu. Hãy nâng tay lên so với vai.',
+		issueHandsHighMessage: 'Tay bạn cao hơn so với video mẫu. Hãy hạ tay xuống so với vai.',
+		issueGapTitle: 'Khoảng cách giữa hai tay',
+		issueHandsApartMessage: 'Hai tay bạn cách xa nhau hơn so với video mẫu.',
+		issueHandsTogetherMessage: 'Hai tay bạn gần nhau hơn so với video mẫu.',
+		issueShapeTitle: 'Hình dạng bàn tay',
+		issueHandClosedMessage: 'Bàn tay bạn khép hơn so với video mẫu. Hãy mở các ngón tay rộng hơn.',
+		issueHandOpenMessage: 'Bàn tay bạn mở rộng hơn so với video mẫu. Hãy khép các ngón tay lại gần nhau hơn.',
+
+		// Lessons
+		lessonsTitle: 'Bài học',
+		lessonsIntro: 'Chọn một chủ đề và luyện lần lượt từng từ trong đó.',
+		streakLabel: (n: number) => `Chuỗi ${n} ngày liên tiếp`,
+		learnedTotal: (n: number, total: number) => `Đã thuộc ${n} / ${total} từ`,
+		reviewTitle: 'Ôn tập',
+		reviewDue: (n: number) => `Có ${n} từ cần ôn tập hôm nay.`,
+		reviewNone: 'Chưa có từ nào cần ôn. Hãy luyện thêm vài từ, chúng sẽ xuất hiện lại ở đây.',
+		reviewStart: 'Bắt đầu ôn tập',
+		topicProgress: (learned: number, total: number) => `Đã thuộc ${learned} / ${total}`,
+		progressNote:
+			'Tiến độ chỉ được lưu trong trình duyệt này. Một từ được tính là đã thuộc khi điểm cao nhất từ 60% trở lên.',
+
+		// Quiz
+		quizTitle: 'Đố vui',
+		quizIntro: 'Tự kiểm tra theo hai cách. Kết quả được tính vào tiến độ của bạn.',
+		quizWatchTitle: 'Xem và chọn',
+		quizWatchBody: 'Xem một ký hiệu rồi chọn từ đúng. Không cần camera.',
+		quizSignTitle: 'Đọc và ký',
+		quizSignBody: 'Xem một từ, ký trước camera và nhận điểm. 10 từ ngẫu nhiên.',
+		quizStart: 'Bắt đầu',
+		quizQuestion: (i: number, n: number) => `Câu ${i} / ${n}`,
+		quizWatchPrompt: 'Ký hiệu này là từ nào?',
+		quizOptionsLabel: 'Các đáp án',
+		quizVideoLabel: 'Video mẫu của ký hiệu cần nhận ra',
+		quizCorrect: 'Chính xác!',
+		quizStreak: (n: number) => `${n} câu đúng liên tiếp`,
+		quizWrong: (word: string) => `Chưa đúng. Đáp án là "${word}".`,
+		quizNext: 'Câu tiếp theo',
+		quizFinish: 'Xem kết quả',
+		quizResult: (score: number, total: number) => `Bạn trả lời đúng ${score} / ${total} câu.`,
+		quizAgain: 'Chơi lại',
+		quizLoading: 'Đang tải danh sách từ...',
+
+		// About
+		aboutTitle: 'Về VSL và văn hóa Người Điếc',
+		aboutItems: [
+			{
+				h: 'Ngôn ngữ ký hiệu Việt Nam là gì?',
+				p: 'Ngôn ngữ ký hiệu Việt Nam (VSL) là ngôn ngữ thị giác được nhiều người Điếc ở Việt Nam sử dụng. Ngôn ngữ này có từ vựng và ngữ pháp riêng, không phải là tiếng Việt nói được ký từng từ một. Nét mặt và chuyển động cũng mang một phần ý nghĩa.'
+			},
+			{
+				h: 'Khác biệt vùng miền',
+				p: 'Ký hiệu có thể khác nhau giữa các vùng, thường được chia thành các biến thể miền Bắc, miền Trung và miền Nam. Các từ trong ứng dụng này lấy từ một bộ video mẫu duy nhất, nên một số ký hiệu có thể khác với những gì người Điếc quanh bạn dùng. Khi băn khoăn, hãy hỏi người Điếc ở địa phương.'
+			},
+			{
+				h: 'Phép lịch sự dành cho người nghe học ký hiệu',
+				p: 'Để gây chú ý, hãy vẫy tay trong tầm nhìn của họ hoặc chạm nhẹ vào vai. Khi họ đang ký, hãy giữ giao tiếp bằng mắt thay vì nhìn tay hay điện thoại của mình. Đừng nói thay người Điếc hay tự cho rằng mình biết họ cần gì, hãy hỏi họ. Hãy kiên nhẫn và xin phép trước khi quay phim bất kỳ ai. Khi có thể, hãy học từ giáo viên Người Điếc và các nhóm cộng đồng Người Điếc, vì họ là người hiểu rõ nhất ngôn ngữ của mình.'
+			},
+			{
+				h: 'Về phản hồi của AI',
+				p: 'Phản hồi trong ứng dụng đến từ một mô hình học máy và các kiểm tra đơn giản về vị trí bàn tay. Kết quả chỉ mang tính gần đúng và có thể sai, chẳng hạn do ánh sáng, góc camera hay trang phục. Ứng dụng không nhìn thấy nét mặt hay khẩu hình, vốn là một phần của ngôn ngữ. Hãy dùng nó như một công cụ hỗ trợ luyện tập, không phải bài kiểm tra xem bạn ký có đúng hay không.'
+			}
+		],
 	},
 } as const;
 
@@ -236,11 +387,36 @@ function readStoredLang(): Lang {
 	return stored === 'en' || stored === 'vi' ? stored : 'en';
 }
 
+type Translations = (typeof translations)[Lang];
+export type MsgKey = keyof Translations;
+/** A message stored as a key (plus params) so it can be re-rendered when the language changes. */
+export type Msg = { key: MsgKey; args?: unknown[] };
+
+export function msg(key: MsgKey, ...args: unknown[]): Msg {
+	return args.length ? { key, args } : { key };
+}
+
+function isMsg(value: unknown): value is Msg {
+	return typeof value === 'object' && value !== null && 'key' in value && typeof (value as Msg).key === 'string';
+}
+
 class I18nStore {
 	lang = $state<Lang>(readStoredLang());
 
 	get t() {
 		return translations[this.lang];
+	}
+
+	/** Resolve a stored message in the current language. Plain strings pass through unchanged. */
+	render(message: Msg | string | null | undefined): string {
+		if (message == null) return '';
+		if (typeof message === 'string') return message;
+		const entry = this.t[message.key] as unknown;
+		if (typeof entry === 'function') {
+			const args = (message.args ?? []).map((arg) => (isMsg(arg) ? this.render(arg) : arg));
+			return String((entry as (...a: unknown[]) => unknown)(...args));
+		}
+		return String(entry);
 	}
 
 	setLang(next: Lang) {

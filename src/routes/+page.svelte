@@ -14,7 +14,7 @@
 
 <main class="page home-page">
 	<section class="hero">
-		<img src={asset('/images/vslink.svg')} alt="vslink" width=50% height="auto" />
+		<img class="hero-logo" src={asset('/images/vslink.svg')} alt="vslink" />
 		<div class="tagline">
 			{i18n.t.heroTagline.before}<span class="accent">{i18n.t.heroTagline.learn}</span>{i18n.t.heroTagline.and}<span class="accent">{i18n.t.heroTagline.translate}</span>{i18n.t.heroTagline.mid}<span class="accent">{i18n.t.heroTagline.realtime}</span>{i18n.t.heroTagline.after}
 		</div>
@@ -60,6 +60,11 @@
 		gap: 18px;
 	}
 
+	.hero-logo {
+		width: min(360px, 70%);
+		height: auto;
+	}
+
 	.brand {
 		font-size: clamp(2.8rem, 7vw, 5rem);
 		font-weight: 900;
@@ -81,7 +86,9 @@
 
 	.button-row {
 		display: flex;
-		gap: 16px;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 12px 16px;
 		margin-top: 12px;
 	}
 
@@ -116,7 +123,7 @@
 		max-width: 1100px;
 		width: 100%;
 		display: grid;
-		grid-template-columns: repeat(3, minmax(200px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
 		gap: 18px;
 	}
 
@@ -137,5 +144,12 @@
 		margin-bottom: 0;
 		color: var(--muted);
 		line-height: 1.6;
+	}
+
+	@media (max-width: 800px) {
+		.home-page {
+			padding: 32px 14px 40px;
+			gap: 28px;
+		}
 	}
 </style>
