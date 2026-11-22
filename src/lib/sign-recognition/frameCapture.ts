@@ -1,4 +1,9 @@
-import type { HandLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision';
+import type {
+	HandLandmarker,
+	HandLandmarkerResult,
+	PoseLandmarker,
+	PoseLandmarkerResult
+} from '@mediapipe/tasks-vision';
 import type { CapturedFrame, Point } from './pipeline';
 
 function toPoint(point: { x: number; y: number; z?: number }): Point {
@@ -13,17 +18,23 @@ function emptyPoints(count: number): Point[] {
 	return Array.from({ length: count }, () => ({ x: 0, y: 0, z: 0 }));
 }
 
-export function detectFrame(
+export function detectRaw(
 	video: HTMLVideoElement,
 	poseLandmarker: PoseLandmarker,
 	handLandmarker: HandLandmarker,
 	timestamp: number
-): CapturedFrame {
-	const poseResult = poseLandmarker.detectForVideo(video, timestamp);
-	const handResult = handLandmarker.detectForVideo(video, timestamp);
+): { poseResult: PoseLandmarkerResult; handResult: HandLandmarkerResult } {
+	return {
+		poseResult: poseLandmarker.detectForVideo(video, timestamp),
+		handResult: handLandmarker.detectForVideo(video, timestamp)
+	};
+}
 
-	const pose =
-		poseResult.landmarks?.[0]?.slice(0, 33).map(toPoint) ?? emptyPoints(33);
+export function framesFromResults(
+	poseResult: PoseLandmarkerResult,
+	handResult: HandLandmarkerResult
+): CapturedFrame {
+	const pose = poseResult.landmarks?.[0]?.slice(0, 33).map(toPoint) ?? emptyPoints(33);
 
 	let leftHand = emptyPoints(21);
 	let rightHand = emptyPoints(21);
@@ -43,9 +54,15 @@ export function detectFrame(
 		}
 	}
 
-	return {
-		pose,
-		leftHand,
-		rightHand
-	};
+	return { pose, leftHand, rightHand };
+}
+
+export function detectFrame(
+	video: HTMLVideoElement,
+	poseLandmarker: PoseLandmarker,
+	handLandmarker: HandLandmarker,
+	timestamp: number
+): CapturedFrame {
+	const { poseResult, handResult } = detectRaw(video, poseLandmarker, handLandmarker, timestamp);
+	return framesFromResults(poseResult, handResult);
 }

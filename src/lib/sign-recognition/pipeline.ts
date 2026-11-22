@@ -184,7 +184,7 @@ function softmax(logits: Float32Array): number[] {
 		maximum = Math.max(maximum, value);
 	}
 
-	const probabilities = logits.map((value) => Math.exp(value - maximum));
+	const probabilities = Array.from(logits, (value) => Math.exp(value - maximum));
 	const total = probabilities.reduce((sum, value) => sum + value, 0);
 
 	return Array.from(probabilities, (value) => value / total);
