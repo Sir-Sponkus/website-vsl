@@ -5,6 +5,9 @@ export type Lang = 'en' | 'vi';
 const translations = {
 	en: {
 		// Translate
+		autoDetect: 'Auto-detect signing',
+		autoWaiting: 'Waiting for you to sign…',
+		autoSigning: 'Signing detected…',
 		camera: 'Camera',
 		videoFile: 'Video file',
 		uploadLabel: 'Upload Video File (.mp4, .webm):',
@@ -42,6 +45,10 @@ const translations = {
 		},
 		learnButton: 'Learn',
 		translateButton: 'Translate',
+		cardLearnDesc: 'Browse the sign dictionary and practice with your camera.',
+		cardLessonsDesc: 'Follow guided lessons from basic to advanced.',
+		cardQuizDesc: 'Test what you know and track your progress.',
+		cardTranslateDesc: 'Translate signs into text in real time.',
 		featurePracticeTitle: 'Practice words',
 		featurePracticeBody:
 			'Choose from 400 sign words, watch the reference video, and practice in front of your camera.',
@@ -98,6 +105,8 @@ const translations = {
 		navLessons: 'Lessons',
 		navQuiz: 'Quiz',
 		navAbout: 'About',
+		themeToLight: 'Switch to light mode',
+		themeToDark: 'Switch to dark mode',
 
 		// Learn: word card
 		englishLabel: 'English',
@@ -189,9 +198,30 @@ const translations = {
 				p: 'The feedback in this app comes from a machine-learning model and simple hand-position checks. It is approximate and can be wrong, for example because of lighting, camera angle or clothing. It does not see facial expressions or mouth movements, which are part of the language. Use it as a practice aid, not as a test of whether you sign correctly.'
 			}
 		],
+		aboutTabsLabel: 'About sections',
+		aboutTabAbout: 'About',
+		aboutTabContrib: 'Contributions',
+		contribContributors: 'Contributors',
+		contribRoleLead: 'Project lead / developer',
+		contribBuiltWith: 'Built with',
+		contribBuiltItems: [
+			{ n: 'MediaPipe Tasks Vision', d: 'pose and hand landmark detection' },
+			{ n: 'ONNX Runtime Web', d: 'runs the sign classifier in your browser' },
+			{ n: 'SvelteKit', d: 'the web app framework' }
+		],
+		contribHow: 'How to contribute',
+		contribHowItems: [
+			'Report issues or wrong results.',
+			'Add or correct sign reference videos.',
+			'Improve the English and Vietnamese translations.',
+			'Submit code through a pull request.'
+		],
 	},
 	vi: {
 		// Translate
+		autoDetect: 'Tự động nhận biết khi ký hiệu',
+		autoWaiting: 'Đang chờ bạn ra ký hiệu…',
+		autoSigning: 'Đã thấy bạn ký hiệu…',
 		camera: 'Máy quay',
 		videoFile: 'Tệp video',
 		uploadLabel: 'Tải lên tệp video (.mp4, .webm):',
@@ -229,6 +259,10 @@ const translations = {
 		},
 		learnButton: 'Học',
 		translateButton: 'Dịch',
+		cardLearnDesc: 'Tra cứu từ điển ký hiệu và luyện tập với camera.',
+		cardLessonsDesc: 'Học theo từng bài từ cơ bản đến nâng cao.',
+		cardQuizDesc: 'Kiểm tra kiến thức và theo dõi tiến độ của bạn.',
+		cardTranslateDesc: 'Dịch ký hiệu thành văn bản theo thời gian thực.',
 		featurePracticeTitle: 'Luyện tập từ vựng',
 		featurePracticeBody:
 			'Chọn trong 400 từ ký hiệu, xem video mẫu và luyện tập trước camera.',
@@ -285,6 +319,8 @@ const translations = {
 		navLessons: 'Bài học',
 		navQuiz: 'Đố vui',
 		navAbout: 'Giới thiệu',
+		themeToLight: 'Chuyển sang giao diện sáng',
+		themeToDark: 'Chuyển sang giao diện tối',
 
 		// Learn: word card
 		englishLabel: 'Tiếng Anh',
@@ -375,6 +411,24 @@ const translations = {
 				h: 'Về phản hồi của AI',
 				p: 'Phản hồi trong ứng dụng đến từ một mô hình học máy và các kiểm tra đơn giản về vị trí bàn tay. Kết quả chỉ mang tính gần đúng và có thể sai, chẳng hạn do ánh sáng, góc camera hay trang phục. Ứng dụng không nhìn thấy nét mặt hay khẩu hình, vốn là một phần của ngôn ngữ. Hãy dùng nó như một công cụ hỗ trợ luyện tập, không phải bài kiểm tra xem bạn ký có đúng hay không.'
 			}
+		],
+		aboutTabsLabel: 'Các mục giới thiệu',
+		aboutTabAbout: 'Giới thiệu',
+		aboutTabContrib: 'Đóng góp',
+		contribContributors: 'Người đóng góp',
+		contribRoleLead: 'Trưởng dự án / lập trình viên',
+		contribBuiltWith: 'Được xây dựng với',
+		contribBuiltItems: [
+			{ n: 'MediaPipe Tasks Vision', d: 'nhận diện điểm mốc cơ thể và bàn tay' },
+			{ n: 'ONNX Runtime Web', d: 'chạy bộ phân loại ký hiệu ngay trong trình duyệt' },
+			{ n: 'SvelteKit', d: 'khung phát triển ứng dụng web' }
+		],
+		contribHow: 'Cách đóng góp',
+		contribHowItems: [
+			'Báo lỗi hoặc kết quả nhận diện sai.',
+			'Thêm hoặc sửa video mẫu cho các ký hiệu.',
+			'Cải thiện bản dịch tiếng Anh và tiếng Việt.',
+			'Gửi mã nguồn qua pull request.'
 		],
 	},
 } as const;
