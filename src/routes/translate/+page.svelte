@@ -5,6 +5,7 @@ import { PoseLandmarker, HandLandmarker, DrawingUtils } from '@mediapipe/tasks-v
 import { classifyFrames } from '$lib/sign-recognition/pipeline';
 import type { CapturedFrame } from '$lib/sign-recognition/pipeline';
 import { framesFromResults } from '$lib/sign-recognition/frameCapture';
+import { createSigningDetector, STOP_MS, trimIdleTail } from '$lib/sign-recognition/signingDetector';
 import { loadModels, monotonicTimestamp, peekLastTimestamp } from '$lib/sign-recognition/models';
 import { i18n, msg } from '$lib/i18n/i18n.svelte';
 import type { Msg } from '$lib/i18n/i18n.svelte';
@@ -27,8 +28,12 @@ const appState = $state({
 	setupError: null as Msg | null,
 	videoFile: null as string | null,
 	isDetecting: false,
+	auto: false, // camera only: start/stop recording when signing is detected
 	countdown: 0
 });
+
+const MIN_SIGN_MS = 400; // auto mode: shorter signs (excluding the idle tail) are silently dropped
+const detector = createSigningDetector();
 
 let videoElement: HTMLVideoElement | null = null;
 let sharedSession: ort.InferenceSession | null = null;
@@ -64,6 +69,7 @@ async function toggleDetection() {
 		appState.prediction = msg('analyzingSign');
 		await runInferenceForWindow();
 		rawFrameBuffer.length = 0;
+		detector.reset(); // go back to listening for the next sign
 		return;
 	}
 
@@ -75,7 +81,8 @@ async function toggleDetection() {
 
 
 	if (appState.input === 'camera') {
-		startCountdown();
+		if (appState.auto) beginRecording(); // manual start still works in auto mode
+		else startCountdown();
 	} else {
 		beginRecording();
 		if (videoElement) await videoElement.play();
@@ -106,6 +113,26 @@ function cancelCountdown() {
 	}
 	appState.countdown = 0;
 	appState.prediction = msg('dash');
+}
+
+function setAuto(on: boolean) {
+	appState.auto = on;
+	detector.reset();
+	if (on) cancelCountdown();
+}
+
+// Auto mode: end of a sign. Too-short sequences (hand flickers) go back to listening silently.
+async function finishAutoRecording() {
+	const recordedMs = performance.now() - recordingStartTime;
+	if (recordedMs - STOP_MS < MIN_SIGN_MS) {
+		appState.isDetecting = false;
+		rawFrameBuffer.length = 0;
+		appState.prediction = msg('dash');
+		detector.reset();
+		return;
+	}
+	rawFrameBuffer = trimIdleTail(rawFrameBuffer, recordedMs);
+	await toggleDetection();
 }
 
 function beginRecording() {
@@ -233,6 +260,18 @@ function startDetectionLoop() {
 							await toggleDetection(); // stops + runs inference, same as pressing Stop
 						}
 					}
+				}
+
+				// Auto mode: hand motion drives start/stop.
+				if (
+					appState.auto &&
+					appState.input === 'camera' &&
+					appState.countdown === 0 &&
+					!appState.isLoading
+				) {
+					const ev = detector.update(handRes.landmarks ?? [], performance.now());
+					if (ev === 'start' && !appState.isDetecting) beginRecording();
+					else if (ev === 'stop' && appState.isDetecting) await finishAutoRecording();
 				}
 
 				// Collect keypoints when recording
@@ -364,6 +403,8 @@ async function handleModeChange(newMode: 'camera' | 'video') {
 	rawFrameBuffer = [];
 	timestampOffset = 0;
 	appState.isDetecting = false;
+	cancelCountdown();
+	detector.reset();
 
 	if (appState.input === 'camera') {
 		await startCamera();
@@ -520,6 +561,25 @@ async function handleLabelsUpload(event: Event) {
 
 			{#if appState.setupError}
 				<div class="alert">{i18n.render(appState.setupError)}</div>
+			{/if}
+
+			{#if appState.input === 'camera'}
+				<div class="auto-row">
+					<button
+						type="button"
+						class="auto-toggle"
+						aria-pressed={appState.auto}
+						onclick={() => setAuto(!appState.auto)}
+					>
+						<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+						{i18n.t.autoDetect}
+					</button>
+					{#if appState.auto && !appState.modelsLoading && !appState.setupError && !appState.isLoading && appState.countdown === 0}
+						<span class="muted">
+							{appState.isDetecting ? i18n.t.autoSigning : i18n.t.autoWaiting}
+						</span>
+					{/if}
+				</div>
 			{/if}
 
 			<div class="controls-row">
@@ -705,12 +765,6 @@ async function handleLabelsUpload(event: Event) {
 	border-color: var(--amber);
 }
 
-.primary.active {
-	background: var(--primary-active);
-	color: var(--ink);
-	border-color: var(--amber);
-}
-
 .video-container {
 	position: relative;
 	width: 100%;
@@ -830,20 +884,38 @@ async function handleLabelsUpload(event: Event) {
 	letter-spacing: 0.06em;
 }
 
-.meta-card {
-	margin-top: 18px;
-	padding: 14px;
-	border-radius: 12px;
-	background: var(--panel-alt);
-	border: 1px solid var(--panel-border);
-	color: var(--text);
-}
-
-.meta-card p {
-	margin: 8px 0;
-}
-
 .muted {
 	color: var(--muted);
+}
+
+.auto-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+	align-items: center;
+	margin-bottom: 10px;
+}
+
+.auto-toggle {
+	display: inline-flex;
+	gap: 8px;
+	align-items: center;
+	padding: 8px 14px;
+	border-radius: 10px;
+	border: 1px solid var(--panel-border);
+	background: var(--panel-alt);
+	color: var(--text);
+	font: inherit;
+	cursor: pointer;
+}
+
+.auto-toggle:hover {
+	border-color: var(--primary);
+}
+
+.auto-toggle[aria-pressed='true'] {
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--primary-ink);
 }
 </style>

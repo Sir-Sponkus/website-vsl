@@ -13,6 +13,7 @@
 	import { referenceFor } from '$lib/learning/reference';
 	import type { Reference } from '$lib/learning/reference';
 	import { detectRaw, framesFromResults } from '$lib/sign-recognition/frameCapture';
+	import { createSigningDetector, STOP_MS, trimIdleTail } from '$lib/sign-recognition/signingDetector';
 	import { loadLabels, loadModels, monotonicTimestamp } from '$lib/sign-recognition/models';
 	import FireBurst from '$lib/components/FireBurst.svelte';
 	import { asset } from '$app/paths';
@@ -24,6 +25,8 @@
 	type WordEntry = { label: string; index: number };
 
 	const MAX_RECORD_DURATION_MS = 10000;
+	const MIN_SIGN_MS = 400; // auto mode: shorter signs (excluding the idle tail) are dropped silently
+	const detector = createSigningDetector();
 
 	const appState = $state({
 		words: [] as WordEntry[],
@@ -41,6 +44,7 @@
 		dropdownOpen: false,
 		status: 'idle' as PracticeStatus,
 		countdown: 0,
+		auto: false, // start/stop the attempt when signing is detected
 		cameraReady: false,
 		modelReady: false,
 		modelsLoading: true,
@@ -236,16 +240,25 @@
 		}
 
 		const step = () => {
-			if (videoElement && poseLandmarker && handLandmarker && appState.status === 'recording') {
+			const recording = appState.status === 'recording';
+			// Auto mode keeps watching between attempts so the next sign starts by itself.
+			const listening =
+				appState.auto &&
+				['idle', 'success', 'error'].includes(appState.status) &&
+				!!appState.selectedWord &&
+				appState.modelReady;
+			if (videoElement && poseLandmarker && handLandmarker && (recording || listening)) {
 				const now = performance.now();
 				const elapsed = now - recordingStartedAt;
 
-				appState.recordRemaining = Math.max(
-					0,
-					Math.ceil((MAX_RECORD_DURATION_MS - elapsed) / 1000)
-				);
+				if (recording) {
+					appState.recordRemaining = Math.max(
+						0,
+						Math.ceil((MAX_RECORD_DURATION_MS - elapsed) / 1000)
+					);
+				}
 
-				if (elapsed >= MAX_RECORD_DURATION_MS) {
+				if (recording && elapsed >= MAX_RECORD_DURATION_MS) {
 					// Same as pressing "Stop and check".
 					void stopAndAnalyze();
 				} else if (now - lastCaptureAt >= 1000 / 30) {
@@ -259,7 +272,21 @@
 							monotonicTimestamp(now)
 						);
 						drawSkeleton(poseResult, handResult);
-						captureFrames.push(framesFromResults(poseResult, handResult));
+						const ev = appState.auto ? detector.update(handResult.landmarks ?? [], now) : null;
+						if (ev === 'start' && !recording) {
+							beginRecording();
+							lastCaptureAt = now;
+						}
+						if (recording || ev === 'start') {
+							captureFrames.push(framesFromResults(poseResult, handResult));
+						}
+						if (ev === 'stop' && recording) {
+							if (elapsed - STOP_MS < MIN_SIGN_MS) resetPractice(); // flicker: back to listening
+							else {
+								captureFrames = trimIdleTail(captureFrames, elapsed);
+								void stopAndAnalyze();
+							}
+						}
 					} catch (error) {
 						console.error('Recognition capture error:', error);
 					}
@@ -305,6 +332,7 @@
 	async function stopAndAnalyze() {
 		if (appState.status !== 'recording') return;
 
+		detector.reset();
 		clearOverlay();
 
 		if (!appState.selectedWord || captureFrames.length < 10) {
@@ -393,7 +421,21 @@
 		}
 	}
 
+	// Manual start button: immediate in auto mode (the detector ends it), countdown otherwise.
+	function startPractice() {
+		if (!appState.selectedWord) return;
+		if (appState.auto) beginRecording();
+		else startCountdown();
+	}
+
+	function setAuto(on: boolean) {
+		appState.auto = on;
+		detector.reset();
+		if (on && appState.status === 'countdown') resetPractice();
+	}
+
 	function resetPractice() {
+		detector.reset();
 		if (countdownTimer) {
 			clearInterval(countdownTimer);
 			countdownTimer = null;
@@ -609,12 +651,29 @@
 				{/if}
 			</div>
 
+			<div class="auto-row">
+				<button
+					type="button"
+					class="auto-toggle"
+					aria-pressed={appState.auto}
+					onclick={() => setAuto(!appState.auto)}
+				>
+					<i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+					{i18n.t.autoDetect}
+				</button>
+				{#if appState.auto && appState.modelReady && appState.cameraReady && appState.status !== 'countdown' && appState.status !== 'analyzing'}
+					<span class="muted">
+						{appState.status === 'recording' ? i18n.t.autoSigning : i18n.t.autoWaiting}
+					</span>
+				{/if}
+			</div>
+
 			<div class="status-row">
 				<button
 					type="button"
 					class="primary"
 					disabled={!appState.modelReady || !appState.cameraReady}
-					onclick={startCountdown}
+					onclick={startPractice}
 				>
 					{appState.status === 'recording' ? i18n.t.recordingEllipsis : i18n.t.startPractice}
 				</button>
@@ -858,12 +917,6 @@
         background: var(--primary-active);
     }
 
-    .secondary {
-        background: var(--panel-alt);
-        color: var(--text);
-        border: 1px solid var(--panel-border);
-    }
-
 
 	.selected-word {
 		margin-bottom: 16px;
@@ -965,7 +1018,6 @@
 	}
 
 	button.primary,
-	button.secondary,
 	button.ghost {
 		border: none;
 		border-radius: 10px;
@@ -988,6 +1040,37 @@
 	button:disabled {
 		cursor: not-allowed;
 		opacity: 0.5;
+	}
+
+	.auto-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 12px;
+		align-items: center;
+		margin-bottom: 10px;
+	}
+
+	.auto-toggle {
+		display: inline-flex;
+		gap: 8px;
+		align-items: center;
+		padding: 8px 14px;
+		border-radius: 10px;
+		border: 1px solid var(--panel-border);
+		background: var(--panel-alt);
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.auto-toggle:hover {
+		border-color: var(--primary);
+	}
+
+	.auto-toggle[aria-pressed='true'] {
+		background: var(--primary);
+		border-color: var(--primary);
+		color: var(--primary-ink);
 	}
 
 	.countdown {

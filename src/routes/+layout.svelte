@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import '@fortawesome/fontawesome-free/css/all.min.css';
 	import { i18n } from '$lib/i18n/i18n.svelte';
 	let { children } = $props();
 	import { asset, resolve } from '$app/paths';
@@ -8,6 +9,22 @@
 	$effect(() => {
 		document.documentElement.lang = i18n.lang;
 	});
+
+	// app.html sets data-theme before paint; this only mirrors and toggles it.
+	let theme = $state<'light' | 'dark'>('dark');
+	$effect(() => {
+		theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+	});
+
+	function toggleTheme() {
+		theme = theme === 'light' ? 'dark' : 'light';
+		document.documentElement.dataset.theme = theme;
+		try {
+			localStorage.setItem('theme', theme);
+		} catch {
+			// storage unavailable: the choice just lasts for this visit
+		}
+	}
 
 
 
@@ -29,6 +46,15 @@
 			<a href={resolve('/about')}>{i18n.t.navAbout}</a>
 		</div>
 		<div class="lang-switch">
+			<button
+				type="button"
+				class="lang-btn"
+				onclick={toggleTheme}
+				aria-label={theme === 'light' ? i18n.t.themeToDark : i18n.t.themeToLight}
+				title={theme === 'light' ? i18n.t.themeToDark : i18n.t.themeToLight}
+			>
+				<i class="fa-solid {theme === 'light' ? 'fa-moon' : 'fa-sun'}" aria-hidden="true"></i>
+			</button>
 			<button
 				type="button"
 				class="lang-btn"

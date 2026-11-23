@@ -29,6 +29,30 @@
 	--success-soft: rgba(63, 174, 124, 0.12);
 	--success-border: rgba(63, 174, 124, 0.32);
 	--success-text: #bfe8d4;
+
+	color-scheme: dark;
+}
+
+/* Set before first paint by the inline script in app.html; toggled from the nav. */
+:root[data-theme='light'] {
+	--bg: #f3f6fa;
+	--nav-bg: rgba(243, 246, 250, 0.85);
+	--panel: #ffffff;
+	--panel-alt: #e9eff5;
+	--panel-border: rgba(15, 28, 40, 0.12);
+	--shadow: rgba(15, 28, 40, 0.08);
+
+	--text: #0f1c28;
+	--text-muted: #52667a;
+
+	--primary-soft: rgba(54, 128, 194, 0.12);
+
+	--danger-soft: rgba(229, 99, 106, 0.1);
+	--danger-text: #a3262e;
+	--success-soft: rgba(63, 174, 124, 0.1);
+	--success-text: #1d6b48;
+
+	color-scheme: light;
 }
 
 html, body {

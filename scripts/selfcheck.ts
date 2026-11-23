@@ -5,6 +5,7 @@ import { baseWord, englishOf, pickOptions, similarTo, TOPICS, topicOf, videoPath
 import { dayKey, dueWords, isLearned, recordAttempt, streak } from '../src/lib/learning/progress.ts';
 import type { Progress } from '../src/lib/learning/progress.ts';
 import { evaluatePracticeAttempt } from '../src/lib/learning/geometricFeedback.ts';
+import { createSigningDetector, trimIdleTail } from '../src/lib/sign-recognition/signingDetector.ts';
 import type { PracticeMetrics } from '../src/lib/learning/geometricFeedback.ts';
 
 const labels: string[] = JSON.parse(readFileSync('static/spoter/labels.json', 'utf8'));
@@ -81,5 +82,29 @@ assert.deepEqual(ids({ leftHandY: 0.3, rightHandY: -0.05, leftSpread: 0.15, righ
 // Hidden hands: visibility-only penalty, no reference comparison.
 assert.deepEqual(ids({ confidence: 0.1 }), ['visibility']);
 assert.equal(evaluatePracticeAttempt({ ...ref, leftHandY: 0.4 }, ref).score, 85);
+
+// Signing detector: start after sustained motion, stop after stillness / absence, ignore flickers.
+{
+	const run = (frames: (number | null)[]) => {
+		const d = createSigningDetector();
+		const ev: string[] = [];
+		frames.forEach((x, i) => {
+			const e = d.update(x === null ? [] : [[{ x, y: 0.5 }]], i * 33);
+			if (e) ev.push(e);
+		});
+		return ev;
+	};
+	const wave = (n: number) => Array.from({ length: n }, (_, i) => 0.4 + (i % 2) * 0.05);
+	const still = (n: number) => Array<number>(n).fill(0.4);
+	const gone = (n: number) => Array<null>(n).fill(null);
+	assert.deepEqual(run(gone(60)), []);
+	assert.deepEqual(run(still(60)), []); // a hand held still never starts
+	assert.deepEqual(run([...wave(3), ...gone(60)]), []); // short flicker ignored
+	assert.deepEqual(run([...wave(30), ...gone(60)]), ['start', 'stop']);
+	assert.deepEqual(run([...wave(30), ...still(60)]), ['start', 'stop']);
+	assert.deepEqual(run([...wave(20), ...gone(10), ...wave(20)]), ['start']); // brief dropout
+	// 2 s at 30 fps ending in 0.9 s idle -> drop the 0.7 s beyond the kept 0.2 s
+	assert.equal(trimIdleTail(Array(60).fill(0), 2000).length, 39);
+}
 
 console.log('selfcheck ok');
