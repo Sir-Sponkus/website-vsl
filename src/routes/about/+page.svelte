@@ -15,28 +15,6 @@
 				<div class="body">{@html item.p}</div>
 			</section>
 		{/each}
-
-		<section id="contributions">
-			<h2>{i18n.t.aboutTabContrib}</h2>
-			<h3>{i18n.t.contribContributors}</h3>
-			<ul>
-				{#each contributors as c (c.name)}
-					<li><strong>{c.name}</strong> <span class="muted">- {i18n.t.contribRoleLead}</span></li>
-				{/each}
-			</ul>
-			<h3>{i18n.t.contribBuiltWith}</h3>
-			<ul>
-				{#each i18n.t.contribBuiltItems as b (b.n)}
-					<li><strong>{b.n}</strong> <span class="muted">- {b.d}</span></li>
-				{/each}
-			</ul>
-			<h3>{i18n.t.contribHow}</h3>
-			<ul>
-				{#each i18n.t.contribHowItems as item (item)}
-					<li>{item}</li>
-				{/each}
-			</ul>
-		</section>
 	</article>
 </main>
 
