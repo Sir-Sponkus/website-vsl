@@ -226,8 +226,6 @@ const translations = {
 				p: 'The feedback in this app comes from a machine-learning model and simple hand-position checks. It is approximate and can be wrong, for example because of lighting, camera angle or clothing. It does not see facial expressions or mouth movements, which are part of the language. Use it as a practice aid, not as a test of whether you sign correctly.'
 			}
 		],
-		aboutTabsLabel: 'About sections',
-		aboutTabAbout: 'About',
 		aboutTabContrib: 'Contributions',
 		contribContributors: 'Contributors',
 		contribRoleLead: 'Project lead / developer',
@@ -468,8 +466,6 @@ const translations = {
 				p: 'Phản hồi trong ứng dụng đến từ một mô hình học máy và các kiểm tra đơn giản về vị trí bàn tay. Kết quả chỉ mang tính gần đúng và có thể sai, chẳng hạn do ánh sáng, góc camera hay trang phục. Ứng dụng không nhìn thấy nét mặt hay khẩu hình, vốn là một phần của ngôn ngữ. Hãy dùng nó như một công cụ hỗ trợ luyện tập, không phải bài kiểm tra xem bạn ký có đúng hay không.'
 			}
 		],
-		aboutTabsLabel: 'Các mục giới thiệu',
-		aboutTabAbout: 'Giới thiệu',
 		aboutTabContrib: 'Đóng góp',
 		contribContributors: 'Người đóng góp',
 		contribRoleLead: 'Trưởng dự án / lập trình viên',
