@@ -56,7 +56,8 @@
 				{#each i18n.t.aboutItems as item (item.h)}
 					<section>
 						<h2>{item.h}</h2>
-						<p>{item.p}</p>
+						<!-- static strings from i18n, never user input -->
+						<div class="body">{@html item.p}</div>
 					</section>
 				{/each}
 			</div>
@@ -138,9 +139,18 @@
 		margin-bottom: 6px;
 	}
 
-	p {
+	.body {
 		line-height: 1.6;
-		margin-top: 0;
+	}
+
+	.body :global(p) {
+		margin: 0 0 8px;
+	}
+
+	.body :global(ul),
+	.body :global(ol) {
+		margin: 0 0 8px;
+		padding-left: 1.2rem;
 	}
 
 	ul {
