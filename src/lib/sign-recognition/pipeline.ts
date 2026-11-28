@@ -1,3 +1,7 @@
+// Same build as the session in models.ts. A dynamic import('onnxruntime-web') here made Vite's dev
+// server re-optimize deps on the first recognition, failing it with "Error analyzing sign".
+import { Tensor, type InferenceSession } from 'onnxruntime-web/webgpu';
+
 export const TARGET_FRAMES = 60;
 export const POSE_JOINTS = 33;
 export const HAND_JOINTS = 21;
@@ -191,7 +195,7 @@ function softmax(logits: Float32Array): number[] {
 }
 
 export async function classifyFrames(
-	session: import('onnxruntime-web').InferenceSession,
+	session: InferenceSession,
 	frames: CapturedFrame[],
 	labels: string[]
 ): Promise<Prediction[]> {
@@ -199,11 +203,7 @@ export async function classifyFrames(
 	const outputName = session.outputNames[0] ?? 'output';
 
 	const tensor = buildTensorData(frames);
-	const input = new (await import('onnxruntime-web')).Tensor(
-		'float32',
-		tensor,
-		[1, TARGET_FRAMES, TOTAL_JOINTS, CHANNELS]
-	);
+	const input = new Tensor('float32', tensor, [1, TARGET_FRAMES, TOTAL_JOINTS, CHANNELS]);
 
 	const outputs = await session.run({
 		[inputName]: input

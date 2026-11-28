@@ -9,6 +9,7 @@ import { createSigningDetector, STOP_MS, trimIdleTail } from '$lib/sign-recognit
 import { loadModels, monotonicTimestamp, peekLastTimestamp } from '$lib/sign-recognition/models';
 import { i18n, msg } from '$lib/i18n/i18n.svelte';
 import type { Msg } from '$lib/i18n/i18n.svelte';
+import { formUrl, MIN_RUNS } from '$lib/sign-recognition/testForm';
 import { evaluate, handRatio, MIN_HAND_RATIO, spokenText } from '$lib/sign-recognition/uncertainty';
 
 const NUM_CLASSES = 400;
@@ -49,6 +50,7 @@ type Token = {
 	target: string;
 };
 type BenchEntry = {
+	angle: string;
 	mode: string;
 	target: string;
 	predicted: string;
@@ -69,6 +71,16 @@ let notice = $state<Msg | null>(null);
 let large = $state(false);
 // Benchmark log: one row per inference, no video kept.
 const bench = $state<BenchEntry[]>([]);
+const ANGLES = ['Frontal', 'Left ~30°', 'Right ~30°', 'Far / low light'];
+let angle = $state(ANGLES[0]);
+// Math.random, not crypto.randomUUID: the latter is missing on plain-http LAN addresses and would break the page.
+const session = `VSL-${Math.random().toString(16).slice(2, 10)}${/Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop'} CPU: ${navigator.hardwareConcurrency} cores`;
+const testUrl = $derived(
+	formUrl(
+		session,
+		bench.map((b) => ({ ...b, final: draft.find((t) => t.id === b.tokenId)?.label ?? '' }))
+	)
+);
 let nextId = 0;
 // When the sign ended; latency = that moment -> predictions shown.
 let signEndedAt: number | null = null;
@@ -393,6 +405,7 @@ function recordResult(
 	const target = labels.includes(stem) ? stem : '';
 	const id = nextId++;
 	bench.push({
+		angle,
 		mode: appState.input,
 		target,
 		predicted,
@@ -491,31 +504,6 @@ function clearDraft() {
 	draft = [];
 	openEditor(null);
 	notice = null;
-}
-
-function exportCsv() {
-	const head = ['no', 'mode', 'target', 'predicted', 'p1 %', 'delta %', 'tier', 'final label', 'predicted correct', 'hand ratio %', 'inference ms', 'latency ms'];
-	const rows = bench.map((b, i) => [
-		i + 1,
-		b.mode,
-		b.target,
-		b.predicted,
-		(b.p1 * 100).toFixed(1),
-		(b.margin * 100).toFixed(1),
-		b.tier,
-		draft.find((t) => t.id === b.tokenId)?.label ?? '',
-		b.target ? String(b.predicted === b.target) : '',
-		(b.handRatio * 100).toFixed(0),
-		b.ms.toFixed(0),
-		b.totalMs.toFixed(0)
-	]);
-	const csv = [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-	const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = 'benchmark.csv';
-	a.click();
-	URL.revokeObjectURL(url);
 }
 
 onMount(async () => {
@@ -852,9 +840,12 @@ async function handleLabelsUpload(event: Event) {
 	<section class="panel draft">
 		<div class="header-row">
 			<h2>{i18n.t.draftTitle}</h2>
-			<button type="button" class="chip" disabled={!bench.length} onclick={exportCsv}>
-				{i18n.t.exportCsv}
-			</button>
+			<label class="angle">
+				{i18n.t.angleLabel}
+				<select bind:value={angle}>
+					{#each ANGLES as a (a)}<option value={a}>{i18n.t.angles[a]}</option>{/each}
+				</select>
+			</label>
 		</div>
 
 		{#if draft.length === 0}
@@ -925,6 +916,14 @@ async function handleLabelsUpload(event: Event) {
 			{#if toReview > 0}<span class="muted">{i18n.t.toReview(toReview)}</span>{/if}
 		</div>
 		{#if notice}<p class="muted">{i18n.render(notice)}</p>{/if}
+		<div class="chips actions">
+			{#if bench.length < MIN_RUNS}
+				<button type="button" class="chip" disabled>{i18n.t.submitWait(bench.length, MIN_RUNS)}</button>
+			{:else}
+				<a class="chip" href={testUrl} target="_blank" rel="noopener noreferrer">{i18n.t.submitReady(bench.length)}</a>
+			{/if}
+		</div>
+		<p class="muted">{i18n.t.submitNote}</p>
 		<p class="muted limits">{i18n.t.limitations}</p>
 	</section>
 
@@ -1213,6 +1212,17 @@ async function handleLabelsUpload(event: Event) {
 	color: var(--text);
 	font: inherit;
 	cursor: pointer;
+}
+
+.angle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--text);
+}
+
+.chip {
+	text-decoration: none;
 }
 
 .chip:disabled {

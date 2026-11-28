@@ -7,6 +7,7 @@ import type { Progress } from '../src/lib/learning/progress.ts';
 import { evaluatePracticeAttempt } from '../src/lib/learning/geometricFeedback.ts';
 import { createSigningDetector, trimIdleTail } from '../src/lib/sign-recognition/signingDetector.ts';
 import { evaluate, handRatio, spokenText } from '../src/lib/sign-recognition/uncertainty.ts';
+import { formUrl } from '../src/lib/sign-recognition/testForm.ts';
 import type { CapturedFrame, Prediction } from '../src/lib/sign-recognition/pipeline.ts';
 import type { PracticeMetrics } from '../src/lib/learning/geometricFeedback.ts';
 
@@ -139,6 +140,18 @@ assert.equal(evaluatePracticeAttempt({ ...ref, leftHandY: 0.4 }, ref).score, 85)
 
 	assert.equal(spokenText(['Cao (người)', 'Anh', 'Nên']), 'Cao Anh Nên');
 	assert.equal(spokenText([]), '');
+
+	const row = (predicted: string, final: string, tier = 'confident') => ({
+		angle: 'Frontal', mode: 'camera', predicted, final, p1: 0.72, margin: 0.4, tier, ms: 45, totalMs: 310, target: ''
+	});
+	const u = new URL(formUrl('VSL-x', [row('Anh', 'Anh'), row('Anh', 'Em'), row('Nên', '', 'reject')]));
+	assert.ok(u.href.startsWith('https://docs.google.com/forms/d/e/1FAIpQLSeD_LGAkP0V1UHdUYLl6Yyq9xJ1UpOXvJRtD2NGiQPSmv2CIA/viewform?'));
+	assert.equal(u.searchParams.get('entry.1079617999'), 'VSL-x');
+	assert.ok(u.searchParams.get('entry.755250454')?.includes('top-1 50%, corrected 1, yellow 0, red 1'));
+	assert.ok(u.searchParams.get('entry.1440675633')?.includes('#2 Frontal camera "Anh" p1 72% Δ 40% confident lat 310ms model 45ms -> Em'));
+	assert.ok(u.searchParams.get('entry.1440675633')?.includes('(rejected)'));
+	const big = formUrl('VSL-x', Array.from({ length: 300 }, () => row('Nghiêng người', 'Cảm ơn')));
+	assert.ok(big.length <= 8000 && big.includes('omitted'));
 }
 
 console.log('selfcheck ok');
