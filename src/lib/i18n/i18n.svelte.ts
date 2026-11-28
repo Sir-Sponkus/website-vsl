@@ -59,6 +59,33 @@ const translations = {
 			'See whether the model recognized your sign and whether your hands stayed visible to the camera.',
 
 
+		// Translate: draft review
+		draftTitle: 'Draft',
+		draftEmpty: 'Recognized signs appear here. Review them before using the text.',
+		rejectLow: (pct: number) => `Sign not accepted: confidence only ${pct}%. Try again, or add one below.`,
+		rejectHands: (pct: number) => `Sign not accepted: hands visible in only ${pct}% of frames. Try again, or add one below.`,
+		reasonUncertain: (pct: number) => `Moderate confidence (${pct}%). Please check this sign.`,
+		reasonMargin: (pct: number, other: string) => `Margin ${pct}% over the next guess. Easily confused with ${other}.`,
+		reasonConfident: (pct: number) => `Margin ${pct}% over the next guess.`,
+		pickSign: 'Pick the right sign',
+		manualFix: 'Or type a correction',
+		draftConfirm: 'Confirm',
+		draftDelete: 'Delete',
+		speak: 'Speak',
+		showLarge: 'Show large',
+		copy: 'Copy',
+		copied: 'Copied',
+		copyFailed: 'Could not copy. Select the text and copy it manually.',
+		clearDraft: 'Clear',
+		exportCsv: 'Export CSV',
+		latency: (total: number, model: number) =>
+			`Latency: ${total} ms from end of sign to prediction (model ${model} ms).`,
+		latencyAutoNote: (ms: number) => ` Includes the ${ms} ms pause auto-detect waits for.`,
+		closeLabel: 'Close',
+		toReview: (n: number) => `${n} sign(s) still to review`,
+		noViVoice: 'No Vietnamese voice is installed on this device, so the text cannot be spoken.',
+		limitations:
+			'Limits: 400 isolated words only, best with a frontal view and good light. Facial expressions are not read, so opposite pairs (Nên / Không nên) can be confused. There is no sentence grammar. Review the draft before using it in medical, legal or administrative settings.',
 		// Learn
 		learnTitle: 'Learn a sign',
 		wordLabel: 'Word',
@@ -298,6 +325,33 @@ const translations = {
 		featureFeedbackBody:
 			'Xem mô hình có nhận ra ký hiệu của bạn không và tay bạn có luôn hiện rõ trước camera không.',
 
+		// Translate: draft review
+		draftTitle: 'Bản nháp',
+		draftEmpty: 'Các ký hiệu nhận diện sẽ hiện ở đây. Hãy kiểm tra trước khi dùng văn bản.',
+		rejectLow: (pct: number) => `Ký hiệu chưa được chấp nhận: độ tin cậy chỉ ${pct}%. Hãy thử lại hoặc thêm một từ bên dưới.`,
+		rejectHands: (pct: number) => `Ký hiệu chưa được chấp nhận: tay chỉ xuất hiện trong ${pct}% số khung hình. Hãy thử lại hoặc thêm một từ bên dưới.`,
+		reasonUncertain: (pct: number) => `Độ tin cậy trung bình (${pct}%). Vui lòng kiểm tra ký hiệu này.`,
+		reasonMargin: (pct: number, other: string) => `Chênh lệch ${pct}% so với dự đoán kế tiếp. Dễ nhầm với ${other}.`,
+		reasonConfident: (pct: number) => `Chênh lệch ${pct}% so với dự đoán kế tiếp.`,
+		pickSign: 'Chọn ký hiệu đúng',
+		manualFix: 'Hoặc nhập từ đúng',
+		draftConfirm: 'Xác nhận',
+		draftDelete: 'Xóa',
+		speak: 'Đọc to',
+		showLarge: 'Hiện chữ lớn',
+		copy: 'Sao chép',
+		copied: 'Đã sao chép',
+		copyFailed: 'Không thể sao chép. Hãy chọn văn bản và sao chép thủ công.',
+		clearDraft: 'Xóa hết',
+		exportCsv: 'Xuất CSV',
+		latency: (total: number, model: number) =>
+			`Độ trễ: ${total} ms từ lúc kết thúc ký hiệu đến khi có kết quả (mô hình ${model} ms).`,
+		latencyAutoNote: (ms: number) => ` Đã gồm ${ms} ms chờ mà chế độ tự phát hiện cần để biết bạn đã dừng.`,
+		closeLabel: 'Đóng',
+		toReview: (n: number) => `Còn ${n} ký hiệu cần kiểm tra`,
+		noViVoice: 'Thiết bị này chưa cài giọng đọc tiếng Việt nên không thể đọc to văn bản.',
+		limitations:
+			'Giới hạn: chỉ nhận 400 từ đơn lẻ, tốt nhất khi quay chính diện và đủ sáng. Biểu cảm khuôn mặt không được nhận diện nên các cặp đối nghĩa (Nên / Không nên) có thể bị nhầm. Chưa có ngữ pháp câu. Hãy kiểm tra bản nháp trước khi dùng trong y tế, pháp lý hoặc thủ tục hành chính.',
 		// Learn
 		learnTitle: 'Học một ký hiệu',
 		wordLabel: 'Từ',

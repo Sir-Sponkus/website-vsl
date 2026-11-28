@@ -9,6 +9,7 @@ import { createSigningDetector, STOP_MS, trimIdleTail } from '$lib/sign-recognit
 import { loadModels, monotonicTimestamp, peekLastTimestamp } from '$lib/sign-recognition/models';
 import { i18n, msg } from '$lib/i18n/i18n.svelte';
 import type { Msg } from '$lib/i18n/i18n.svelte';
+import { evaluate, handRatio, MIN_HAND_RATIO, spokenText } from '$lib/sign-recognition/uncertainty';
 
 const NUM_CLASSES = 400;
 
@@ -31,6 +32,48 @@ const appState = $state({
 	auto: false, // camera only: start/stop recording when signing is detected
 	countdown: 0
 });
+
+type Status = 'confident' | 'uncertain' | 'verified' | 'edited';
+type Token = {
+	id: number;
+	predicted: string;
+	label: string;
+	p1: number;
+	margin: number;
+	closeCall: boolean;
+	top2: string;
+	status: Status;
+	top5: PredictionItem[];
+	inferenceMs: number;
+	handRatio: number;
+	target: string;
+};
+type BenchEntry = {
+	mode: string;
+	target: string;
+	predicted: string;
+	p1: number;
+	margin: number;
+	tier: string;
+	handRatio: number;
+	ms: number;
+	totalMs: number;
+	tokenId: number;
+};
+
+let draft = $state<Token[]>([]);
+let openId = $state<number | null>(null);
+let manual = $state('');
+let rejected = $state<{ reason: Msg; token: Token } | null>(null);
+let notice = $state<Msg | null>(null);
+let large = $state(false);
+// Benchmark log: one row per inference, no video kept.
+const bench = $state<BenchEntry[]>([]);
+let nextId = 0;
+// When the sign ended; latency = that moment -> predictions shown.
+let signEndedAt: number | null = null;
+let signAuto = false; // sign ended by auto-detect (latency includes the STOP_MS pause)
+let latency = $state<{ totalMs: number; inferenceMs: number; auto: boolean } | null>(null);
 
 const MIN_SIGN_MS = 400; // auto mode: shorter signs (excluding the idle tail) are silently dropped
 const detector = createSigningDetector();
@@ -63,11 +106,14 @@ async function toggleDetection() {
 	// Currently recording -> stop and analyze
 	if (appState.isDetecting) {
 		appState.isDetecting = false;
+		signEndedAt ??= performance.now();
 		if (appState.input === 'video' && videoElement) {
 			videoElement.pause();
 		}
 		appState.prediction = msg('analyzingSign');
 		await runInferenceForWindow();
+		signEndedAt = null;
+		signAuto = false;
 		rawFrameBuffer.length = 0;
 		detector.reset(); // go back to listening for the next sign
 		return;
@@ -132,16 +178,20 @@ async function finishAutoRecording() {
 		return;
 	}
 	rawFrameBuffer = trimIdleTail(rawFrameBuffer, recordedMs);
+	signEndedAt = performance.now() - STOP_MS; // the detector only fires after STOP_MS without motion
+	signAuto = true;
 	await toggleDetection();
 }
 
 function beginRecording() {
+	latency = null;
 	rawFrameBuffer.length = 0;
 	lastCaptureTime = 0;
 	recordingStartTime = performance.now();
 	appState.isDetecting = true;
 	appState.prediction = msg('recordingGesture');
 	appState.topPredictions = [];
+	rejected = null;
 }
 
 function drawOverlayText(
@@ -306,7 +356,9 @@ async function runInferenceForWindow() {
 			console.warn(`labels.json has ${labels.length} entries, model expects ${NUM_CLASSES}.`);
 		}
 
+		const t0 = performance.now();
 		const ranked = await classifyFrames(session, rawFrameBuffer, labels);
+		const inferenceMs = performance.now() - t0; // tensor build + ONNX only; MediaPipe runs during recording
 		const topPredictions = ranked.slice(0, 5).map((item) => ({
 			label: item.label,
 			confidence: item.confidence,
@@ -314,6 +366,10 @@ async function runInferenceForWindow() {
 		}));
 		appState.topPredictions = topPredictions;
 		appState.prediction = topPredictions[0]?.label ?? msg('unknown');
+		latency = { totalMs: performance.now() - (signEndedAt ?? t0), inferenceMs, auto: signAuto };
+		if (topPredictions.length) {
+			recordResult(topPredictions, evaluate(ranked, handRatio(rawFrameBuffer)), latency);
+		}
 	} catch (err) {
 		console.error('Inference error:', err);
 		appState.prediction = msg('errorAnalyzing');
@@ -322,8 +378,148 @@ async function runInferenceForWindow() {
 	}
 }
 
+const pct = (x: number) => Math.floor(x * 100);
+
+function recordResult(
+	top5: PredictionItem[],
+	ev: ReturnType<typeof evaluate>,
+	{ totalMs, inferenceMs }: { totalMs: number; inferenceMs: number }
+) {
+	const predicted = top5[0].label;
+	const stem =
+		appState.input === 'video' && appState.videoFile
+			? appState.videoFile.replace(/\.[^.]+$/, '').split('__')[0].normalize('NFC')
+			: '';
+	const target = labels.includes(stem) ? stem : '';
+	const id = nextId++;
+	bench.push({
+		mode: appState.input,
+		target,
+		predicted,
+		p1: ev.p1,
+		margin: ev.margin,
+		tier: ev.tier,
+		handRatio: ev.handRatio,
+		ms: inferenceMs,
+		totalMs,
+		tokenId: id
+	});
+	const token: Token = {
+		id,
+		predicted,
+		label: predicted,
+		p1: ev.p1,
+		margin: ev.margin,
+		closeCall: ev.closeCall,
+		top2: ev.top2Label,
+		status: ev.tier === 'uncertain' ? 'uncertain' : 'confident',
+		top5,
+		inferenceMs,
+		handRatio: ev.handRatio,
+		target
+	};
+	if (ev.tier === 'reject') {
+		const reason =
+			ev.handRatio < MIN_HAND_RATIO ? msg('rejectHands', pct(ev.handRatio)) : msg('rejectLow', pct(ev.p1));
+		rejected = { reason, token };
+		return;
+	}
+	rejected = null;
+	draft.push(token);
+	// Auto mode keeps producing signs: never steal an open editor.
+	if (ev.tier === 'uncertain' && openId === null) openEditor(token.id);
+}
+
+function addRejected(label: string) {
+	if (!rejected) return;
+	const { token } = rejected;
+	draft.push({ ...token, label, status: label === token.predicted ? 'verified' : 'edited' });
+	rejected = null;
+}
+
+function openEditor(id: number | null) {
+	openId = id;
+	manual = '';
+}
+
+function setLabel(t: Token, label: string) {
+	t.label = label;
+	t.status = label === t.predicted ? 'verified' : 'edited';
+}
+
+function confirmToken(t: Token) {
+	const typed = manual.trim();
+	if (typed) setLabel(t, typed);
+	else if (t.status === 'uncertain' || t.status === 'confident') t.status = 'verified';
+	openEditor(null);
+}
+
+function deleteToken(id: number) {
+	draft = draft.filter((t) => t.id !== id);
+	openEditor(null);
+}
+
+const outputText = $derived(spokenText(draft.map((t) => t.label)));
+const toReview = $derived(draft.filter((t) => t.status === 'uncertain').length);
+
+function speak() {
+	const synth = window.speechSynthesis;
+	// Voices load async in some browsers, so check at click time.
+	const voice = synth?.getVoices().find((v) => v.lang.toLowerCase().startsWith('vi'));
+	if (!voice) {
+		notice = msg('noViVoice');
+		return;
+	}
+	notice = null;
+	const u = new SpeechSynthesisUtterance(outputText);
+	u.lang = 'vi-VN';
+	u.voice = voice;
+	synth.cancel();
+	synth.speak(u);
+}
+
+async function copyText() {
+	try {
+		await navigator.clipboard.writeText(outputText);
+		notice = msg('copied');
+	} catch {
+		notice = msg('copyFailed');
+	}
+}
+
+function clearDraft() {
+	draft = [];
+	openEditor(null);
+	notice = null;
+}
+
+function exportCsv() {
+	const head = ['no', 'mode', 'target', 'predicted', 'p1 %', 'delta %', 'tier', 'final label', 'predicted correct', 'hand ratio %', 'inference ms', 'latency ms'];
+	const rows = bench.map((b, i) => [
+		i + 1,
+		b.mode,
+		b.target,
+		b.predicted,
+		(b.p1 * 100).toFixed(1),
+		(b.margin * 100).toFixed(1),
+		b.tier,
+		draft.find((t) => t.id === b.tokenId)?.label ?? '',
+		b.target ? String(b.predicted === b.target) : '',
+		(b.handRatio * 100).toFixed(0),
+		b.ms.toFixed(0),
+		b.totalMs.toFixed(0)
+	]);
+	const csv = [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+	const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = 'benchmark.csv';
+	a.click();
+	URL.revokeObjectURL(url);
+}
 
 onMount(async () => {
+	window.speechSynthesis?.getVoices(); // starts the async voice load
 	try {
 		const models = await loadModels();
 		poseLandmarker = models.poseLandmarker;
@@ -496,6 +692,8 @@ async function handleLabelsUpload(event: Event) {
 }
 </script>
 
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (large = false)} />
+
 <main class="page">
 	<section class="shell">
 		<div class="panel big-one">
@@ -555,6 +753,13 @@ async function handleLabelsUpload(event: Event) {
 				</div>
 			</div>
 
+			{#if latency}
+				<div class="loading" role="status">
+					{i18n.t.latency(Math.round(latency.totalMs), Math.round(latency.inferenceMs))}
+					{#if latency.auto}{i18n.t.latencyAutoNote(STOP_MS)}{/if}
+				</div>
+			{/if}
+
 			{#if appState.modelsLoading}
 				<div class="loading" role="status">{i18n.t.loadingModels}</div>
 			{/if}
@@ -597,6 +802,19 @@ async function handleLabelsUpload(event: Event) {
 					{appState.isDetecting ? i18n.t.stopDetection : i18n.t.startDetection}
 				</button>
 			</div>
+
+			{#if rejected}
+				<div class="alert reject">
+					<p>{i18n.render(rejected.reason)}</p>
+					<div class="chips">
+						{#each rejected.token.top5 as item (item.label)}
+							<button type="button" class="chip" onclick={() => addRejected(item.label)}>
+								{item.label} {item.percentage}
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 
 		<div class="panel small-one">
@@ -630,6 +848,91 @@ async function handleLabelsUpload(event: Event) {
 			{/if}
 		</div>
 	</section>
+
+	<section class="panel draft">
+		<div class="header-row">
+			<h2>{i18n.t.draftTitle}</h2>
+			<button type="button" class="chip" disabled={!bench.length} onclick={exportCsv}>
+				{i18n.t.exportCsv}
+			</button>
+		</div>
+
+		{#if draft.length === 0}
+			<p class="muted">{i18n.t.draftEmpty}</p>
+		{:else}
+			<div class="chips">
+				{#each draft as t (t.id)}
+					<button
+						type="button"
+						class="chip {t.status}"
+						aria-expanded={openId === t.id}
+						onclick={() => openEditor(openId === t.id ? null : t.id)}
+					>
+						{t.label}
+					</button>
+				{/each}
+			</div>
+
+			{#each draft as t (t.id)}
+				{#if openId === t.id}
+					<div class="editor">
+						<p class="muted">
+							{#if t.status === 'uncertain'}{i18n.t.reasonUncertain(pct(t.p1))}{/if}
+							{#if t.closeCall}
+								{i18n.t.reasonMargin(pct(t.margin), t.top2)}
+							{:else}
+								{i18n.t.reasonConfident(pct(t.margin))}
+							{/if}
+						</p>
+						<strong>{i18n.t.pickSign}</strong>
+						<div class="chips">
+							{#each t.top5 as item (item.label)}
+								<button type="button" class="chip" onclick={() => setLabel(t, item.label)}>
+									{item.label} {item.percentage}
+								</button>
+							{/each}
+						</div>
+						<div class="field">
+							<label for="manual-input">{i18n.t.manualFix}</label>
+							<input id="manual-input" bind:value={manual} />
+						</div>
+						<div class="chips">
+							<button type="button" class="primary-button" onclick={() => confirmToken(t)}>
+								{i18n.t.draftConfirm}
+							</button>
+							<button type="button" class="chip" onclick={() => deleteToken(t.id)}>
+								{i18n.t.draftDelete}
+							</button>
+						</div>
+					</div>
+				{/if}
+			{/each}
+		{/if}
+
+		<div class="chips actions">
+			<button type="button" class="primary-button" disabled={!draft.length || toReview > 0} onclick={speak}>
+				{i18n.t.speak}
+			</button>
+			<button type="button" class="primary-button" disabled={!draft.length || toReview > 0} onclick={() => (large = true)}>
+				{i18n.t.showLarge}
+			</button>
+			<button type="button" class="primary-button" disabled={!draft.length || toReview > 0} onclick={copyText}>
+				{i18n.t.copy}
+			</button>
+			<button type="button" class="chip" disabled={!draft.length} onclick={clearDraft}>
+				{i18n.t.clearDraft}
+			</button>
+			{#if toReview > 0}<span class="muted">{i18n.t.toReview(toReview)}</span>{/if}
+		</div>
+		{#if notice}<p class="muted">{i18n.render(notice)}</p>{/if}
+		<p class="muted limits">{i18n.t.limitations}</p>
+	</section>
+
+	{#if large}
+		<button type="button" class="overlay" onclick={() => (large = false)} aria-label={i18n.t.closeLabel}>
+			{outputText}
+		</button>
+	{/if}
 </main>
 <style>
 .page {
@@ -886,6 +1189,86 @@ async function handleLabelsUpload(event: Event) {
 
 .muted {
 	color: var(--muted);
+}
+
+.draft {
+	max-width: 1200px;
+	margin: 20px auto 0;
+	box-sizing: border-box;
+}
+
+.chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 8px 0;
+}
+
+.chip {
+	padding: 6px 12px;
+	border-radius: 999px;
+	border: 1px solid var(--panel-border);
+	background: var(--panel-alt);
+	color: var(--text);
+	font: inherit;
+	cursor: pointer;
+}
+
+.chip:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+.chip.confident,
+.chip.verified,
+.chip.edited {
+	background: var(--success-soft);
+	border-color: var(--success-border);
+	color: var(--success-text);
+}
+
+.chip.uncertain {
+	background: color-mix(in srgb, var(--amber) 20%, transparent);
+	border-color: var(--amber);
+}
+
+.editor {
+	margin: 8px 0;
+	padding: 12px;
+	border-radius: 12px;
+	border: 1px solid var(--panel-border);
+	background: var(--panel-alt);
+}
+
+.reject p {
+	margin: 0 0 6px;
+}
+
+.actions {
+	margin-top: 14px;
+}
+
+.limits {
+	font-size: 0.85rem;
+}
+
+.overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	border: none;
+	background: var(--bg);
+	color: var(--text);
+	font: inherit;
+	font-size: clamp(3rem, 12vw, 9rem);
+	font-weight: 700;
+	text-align: center;
+	cursor: pointer;
 }
 
 .auto-row {
