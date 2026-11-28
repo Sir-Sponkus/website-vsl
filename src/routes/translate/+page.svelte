@@ -74,7 +74,18 @@ const bench = $state<BenchEntry[]>([]);
 const ANGLES = ['Frontal', 'Left ~30°', 'Right ~30°', 'Far / low light'];
 let angle = $state(ANGLES[0]);
 // Math.random, not crypto.randomUUID: the latter is missing on plain-http LAN addresses and would break the page.
-const session = `VSL-${Math.random().toString(16).slice(2, 10)}${/Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop'} CPU: ${navigator.hardwareConcurrency} cores`;
+const newSession = () =>
+	`VSL-${Math.random().toString(16).slice(2, 10)} ${/Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop'} CPU: ${navigator.hardwareConcurrency} cores`;
+let session = $state(newSession());
+
+// Each opened form is one session: start fresh so the next form doesn't repeat these runs.
+// Deferred so the browser opens the link with the current href before it is rebuilt.
+function formOpened() {
+	setTimeout(() => {
+		bench.length = 0;
+		session = newSession();
+	});
+}
 const testUrl = $derived(
 	formUrl(
 		session,
@@ -920,7 +931,7 @@ async function handleLabelsUpload(event: Event) {
 			{#if bench.length < MIN_RUNS}
 				<button type="button" class="chip" disabled>{i18n.t.submitWait(bench.length, MIN_RUNS)}</button>
 			{:else}
-				<a class="chip" href={testUrl} target="_blank" rel="noopener noreferrer">{i18n.t.submitReady(bench.length)}</a>
+				<a class="chip" href={testUrl} target="_blank" rel="noopener noreferrer" onclick={formOpened}>{i18n.t.submitReady(bench.length)}</a>
 			{/if}
 		</div>
 		<p class="muted">{i18n.t.submitNote}</p>
