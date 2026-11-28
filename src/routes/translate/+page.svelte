@@ -912,9 +912,6 @@ async function handleLabelsUpload(event: Event) {
 		{/if}
 
 		<div class="chips actions">
-			<button type="button" class="primary-button" disabled={!draft.length || toReview > 0} onclick={speak}>
-				{i18n.t.speak}
-			</button>
 			<button type="button" class="primary-button" disabled={!draft.length || toReview > 0} onclick={() => (large = true)}>
 				{i18n.t.showLarge}
 			</button>
