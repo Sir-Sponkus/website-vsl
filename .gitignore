@@ -22,3 +22,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Test set videos (fetched by scripts/fetch-testset.sh)
+test-set/*.mp4

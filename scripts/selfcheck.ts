@@ -6,6 +6,8 @@ import { dayKey, dueWords, isLearned, recordAttempt, streak } from '../src/lib/l
 import type { Progress } from '../src/lib/learning/progress.ts';
 import { evaluatePracticeAttempt } from '../src/lib/learning/geometricFeedback.ts';
 import { createSigningDetector, trimIdleTail } from '../src/lib/sign-recognition/signingDetector.ts';
+import { evaluate, handRatio, spokenText } from '../src/lib/sign-recognition/uncertainty.ts';
+import type { CapturedFrame, Prediction } from '../src/lib/sign-recognition/pipeline.ts';
 import type { PracticeMetrics } from '../src/lib/learning/geometricFeedback.ts';
 
 const labels: string[] = JSON.parse(readFileSync('static/spoter/labels.json', 'utf8'));
@@ -105,6 +107,38 @@ assert.equal(evaluatePracticeAttempt({ ...ref, leftHandY: 0.4 }, ref).score, 85)
 	assert.deepEqual(run([...wave(20), ...gone(10), ...wave(20)]), ['start']); // brief dropout
 	// 2 s at 30 fps ending in 0.9 s idle -> drop the 0.7 s beyond the kept 0.2 s
 	assert.equal(trimIdleTail(Array(60).fill(0), 2000).length, 39);
+}
+
+// Uncertainty tiers: thresholds are inclusive at the lower edge; margin never changes the tier.
+{
+	const rank = (p1: number, p2: number): Prediction[] => [
+		{ label: 'A', confidence: p1, index: 0 },
+		{ label: 'B', confidence: p2, index: 1 }
+	];
+	const tier = (p1: number, p2 = 0, r = 1) => evaluate(rank(p1, p2), r).tier;
+	assert.equal(tier(0.65), 'confident');
+	assert.equal(tier(0.64), 'uncertain');
+	assert.equal(tier(0.4), 'uncertain');
+	assert.equal(tier(0.39), 'reject');
+	assert.equal(tier(0.9, 0.05, 0.5), 'confident');
+	assert.equal(tier(0.9, 0.05, 0.49), 'reject');
+	assert.equal(tier(0.65, 0.6), 'confident'); // close call, same tier
+	assert.ok(evaluate(rank(0.5, 0.4), 1).closeCall);
+	assert.ok(!evaluate(rank(0.5, 0.3), 1).closeCall);
+	assert.equal(evaluate(rank(0.5, 0.3), 1).top2Label, 'B');
+	assert.equal(evaluate([], 1).tier, 'reject');
+
+	const pts = (x: number) => [{ x, y: 0 }];
+	const fr = (l: number, r: number): CapturedFrame => ({
+		pose: [],
+		leftHand: pts(l),
+		rightHand: pts(r)
+	});
+	assert.equal(handRatio([]), 0);
+	assert.equal(handRatio([fr(0, 0), fr(0.3, 0), fr(0, 0.2), fr(0, 0)]), 0.5);
+
+	assert.equal(spokenText(['Cao (người)', 'Anh', 'Nên']), 'Cao Anh Nên');
+	assert.equal(spokenText([]), '');
 }
 
 console.log('selfcheck ok');
