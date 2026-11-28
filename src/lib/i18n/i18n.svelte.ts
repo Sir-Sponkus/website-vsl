@@ -82,7 +82,7 @@ const translations = {
 		submitWait: (n: number, min: number) => `Submit test results (${n}/${min})`,
 		submitReady: (n: number) => `Submit test results (${n} runs)`,
 		submitNote:
-			'Opens a Google Form pre-filled with these numbers only (no video or images). Nothing is sent until you review it and press Submit in the form. Reloading the page resets the count.',
+			'Opens a Google Form pre-filled with these numbers only (no video or images). Nothing is sent until you review it and press Submit in the form. Opening the form starts a new session, so each form holds only its own runs. Reloading the page also resets the count.',
 		latency: (total: number, model: number) =>
 			`Latency: ${total} ms from end of sign to prediction (model ${model} ms).`,
 		latencyAutoNote: (ms: number) => ` Includes the ${ms} ms pause auto-detect waits for.`,
@@ -353,7 +353,7 @@ const translations = {
 		submitWait: (n: number, min: number) => `Gửi kết quả thử nghiệm (${n}/${min})`,
 		submitReady: (n: number) => `Gửi kết quả thử nghiệm (${n} lượt)`,
 		submitNote:
-			'Mở Google Form đã điền sẵn chỉ các số liệu này (không có video hay hình ảnh). Sẽ không có gì được gửi đi cho đến khi bạn xem lại và bấm Gửi trong biểu mẫu. Tải lại trang sẽ đặt lại số lượt.',
+			'Mở Google Form đã điền sẵn chỉ các số liệu này (không có video hay hình ảnh). Sẽ không có gì được gửi đi cho đến khi bạn xem lại và bấm Gửi trong biểu mẫu. Mỗi lần mở biểu mẫu sẽ bắt đầu một phiên mới, nên mỗi biểu mẫu chỉ chứa các lượt của riêng nó. Tải lại trang cũng sẽ đặt lại số lượt.',
 		latency: (total: number, model: number) =>
 			`Độ trễ: ${total} ms từ lúc kết thúc ký hiệu đến khi có kết quả (mô hình ${model} ms).`,
 		latencyAutoNote: (ms: number) => ` Đã gồm ${ms} ms chờ mà chế độ tự phát hiện cần để biết bạn đã dừng.`,
